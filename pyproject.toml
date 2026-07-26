@@ -1,0 +1,15 @@
+[project]
+name = "investment-screening"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.140.0",
+    "uvicorn>=0.51.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+]

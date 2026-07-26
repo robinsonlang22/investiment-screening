@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0.0",
+  "id": "F1",
+  "name": "融资余额稳定原则",
+  "category": "capital_flow",
+  "scope": "具有融资余额数据的A股融资融券标的",
+  "rule_type": "buy_required_with_hard_vetoes",
+  "data": {
+    "balance_field": "东方财富每日融资余额 B_t",
+    "balance_field_not_allowed": "融资净买入额的直接累加值",
+    "window_data_points": 21,
+    "window_change_intervals": 20,
+    "window": "[T-20,T]",
+    "as_of": "审核日最近一个已披露融资融券数据的交易日",
+    "preferred_source": "东方财富逐日融资余额及自由流通市值",
+    "date_policy": "融资数据日期与行情日期不同时必须分别披露"
+  },
+  "metrics": {
+    "LR_pct": "B_t / FFMC_t * 100",
+    "C20_pct": "(B_t / B_t_minus_20 - 1) * 100",
+    "GB_pct_per_day": "(exp(slope(ln(B_i), i=0..20)) - 1) * 100",
+    "F1_day_pct": "(B_t - B_t_minus_1) / B_t_minus_1 * 100",
+    "F3_day_pct": "(B_t - B_t_minus_3) / B_t_minus_3 * 100",
+    "F1_min_pct": "min(全部20个单日变化率)",
+    "F3_min_pct": "min(窗口内全部18个连续3日变化率)"
+  },
+  "leverage_tiers": [
+    {
+      "id": "strict",
+      "when": "LR_pct > 5",
+      "labels": {
+        "LR_pct > 10": "高杠杆拥挤标的",
+        "5 < LR_pct <= 10": "基准严格档"
+      },
+      "thresholds": {
+        "C20_min_inclusive_pct": -2,
+        "GB_min_inclusive_pct_per_day": -0.1,
+        "F1_min_strictly_greater_than_pct": -3,
+        "F3_min_strictly_greater_than_pct": -5
+      }
+    },
+    {
+      "id": "relaxed_low_leverage",
+      "when": "LR_pct <= 5",
+      "label": "低杠杆放宽档",
+      "thresholds": {
+        "C20_min_inclusive_pct": -3,
+        "GB_min_inclusive_pct_per_day": -0.15,
+        "F1_min_strictly_greater_than_pct": -4,
+        "F3_min_strictly_greater_than_pct": -6
+      }
+    }
+  ],
+  "date_alignment": {
+    "preferred": "B_t 与 FFMC_t 使用同一交易日",
+    "fallback": "使用不晚于融资数据日期且最接近的 FFMC_t",
+    "disclose_both_dates": true,
+    "missing_or_unverifiable_ffmc_result": "insufficient_information"
+  },
+  "evaluation": {
+    "stable_conditions": [
+      "C20_pct >= active_tier.C20_min_inclusive_pct",
+      "GB_pct_per_day >= active_tier.GB_min_inclusive_pct_per_day"
+    ],
+    "hard_vetoes": [
+      {
+        "id": "single_day_outflow",
+        "when": "F1_min_pct <= active_tier.F1_min_strictly_greater_than_pct"
+      },
+      {
+        "id": "three_day_outflow",
+        "when": "F3_min_pct <= active_tier.F3_min_strictly_greater_than_pct"
+      }
+    ],
+    "decision_order": [
+      {
+        "when": "any hard_veto triggered",
+        "result": "fail"
+      },
+      {
+        "when": "both stable_conditions failed",
+        "result": "fail"
+      },
+      {
+        "when": "no hard_veto triggered and exactly one stable_condition failed",
+        "result": "conditional_pass"
+      },
+      {
+        "when": "no hard_veto triggered and both stable_conditions passed",
+        "result": "pass"
+      }
+    ]
+  },
+  "insufficient_information_conditions": [
+    "标的不是融资融券标的",
+    "少于21个有效融资余额数据点",
+    "无法计算或核对 LR",
+    "数据口径或日期无法核对"
+  ],
+  "systemic_deleveraging_manual_review": {
+    "market_metric": "沪深两市融资融券余额合计 M_t",
+    "daily_change_pct": "(M_t / M_t_minus_1 - 1) * 100",
+    "systemic_event_when": "market_daily_change_pct < -2.5",
+    "boundary": "恰好 -2.5% 不触发",
+    "trigger": "F1 因任一否决条件 fail 且相关异常日为系统性去杠杆日",
+    "automatic_reclassification_allowed": false,
+    "review_evidence": [
+      "标的股价与成交量变化，特别是下跌是否异常放量",
+      "所属板块或行业指数走势",
+      "标的融资余额相对全市场和板块同期表现"
+    ],
+    "keep_fail_when": [
+      "证据不足",
+      "证据相互矛盾",
+      "证据更支持个股资金独立出逃"
+    ],
+    "maximum_reclassified_result": "conditional_pass",
+    "reclassify_only_when": "人工确认主要属于被动跟随调整",
+    "maximum_overall_result_after_use": "有条件符合",
+    "cannot_override": ["P1", "P2", "other_hard_vetoes"]
+  },
+  "required_disclosures": [
+    "financing_data_as_of_date",
+    "market_data_as_of_date",
+    "FFMC_date",
+    "window_start_date",
+    "window_end_date",
+    "LR_pct",
+    "active_tier",
+    "C20_pct",
+    "GB_pct_per_day",
+    "F1_min_pct_and_date",
+    "F3_min_pct_and_date_range",
+    "hard_veto_results",
+    "manual_review_required",
+    "result",
+    "reason"
+  ]
+}

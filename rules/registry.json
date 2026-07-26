@@ -1,0 +1,90 @@
+{
+  "schema_version": "1.0.0",
+  "rule_version": "2026-07-01",
+  "source": "review-investment/references/investment-principles.md",
+  "status": "configuring",
+  "rules": [
+    {
+      "id": "P1",
+      "category": "technical",
+      "name": "均线排列原则",
+      "file": "p1.json",
+      "enabled": true,
+      "required": true
+    },
+    {
+      "id": "P2",
+      "category": "technical",
+      "name": "股价运行方向原则",
+      "file": "p2.json",
+      "enabled": true,
+      "required": true,
+      "hard_vetoes": ["clock_4"]
+    },
+    {
+      "id": "F1",
+      "category": "capital_flow",
+      "name": "融资余额稳定原则",
+      "file": "f1.json",
+      "enabled": true,
+      "required": true,
+      "hard_vetoes": ["single_day_outflow", "three_day_outflow"]
+    }
+  ],
+  "rule_result_values": [
+    "pass",
+    "conditional_pass",
+    "fail",
+    "insufficient_information"
+  ],
+  "overall_result_values": [
+    "COMPLIANT",
+    "CONDITIONAL",
+    "NOT_COMPLIANT",
+    "INFORMATION_INSUFFICIENT"
+  ],
+  "aggregation": {
+    "precedence": [
+      {
+        "when": "any_hard_veto_triggered",
+        "result": "NOT_COMPLIANT"
+      },
+      {
+        "when": "any_required_condition_failed",
+        "result": "NOT_COMPLIANT"
+      },
+      {
+        "when": "any_required_rule_insufficient_information",
+        "result": "INFORMATION_INSUFFICIENT"
+      },
+      {
+        "when": "only_preferences_failed_or_any_rule_conditional_pass",
+        "result": "CONDITIONAL"
+      },
+      {
+        "when": "all_hard_and_required_conditions_passed_with_sufficient_evidence",
+        "result": "COMPLIANT"
+      }
+    ],
+    "manual_override": {
+      "id": "F1_SYSTEMIC_DELEVERAGING_REVIEW",
+      "applies_to_rule": "F1",
+      "from": "fail",
+      "maximum_rule_result": "conditional_pass",
+      "maximum_overall_result": "CONDITIONAL",
+      "automatic_override_allowed": false,
+      "cannot_override": ["P1", "P2", "other_hard_vetoes"]
+    }
+  },
+  "unset_constraints": {
+    "fundamental_rules_from": "P3",
+    "max_single_position": null,
+    "max_single_industry_position": null,
+    "allowed_asset_types_and_markets": null,
+    "entry_price_or_valuation_discipline": null,
+    "minimum_or_maximum_holding_period": null,
+    "stop_loss_trim_or_exit_rules": null,
+    "other_vetoes": null,
+    "policy": "null 表示未设定，执行器不得自行推断或补充"
+  }
+}

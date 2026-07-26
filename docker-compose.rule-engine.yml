@@ -1,0 +1,12 @@
+services:
+  rule-engine:
+    build: .
+    restart: always
+    expose:
+      - "8000"
+    networks:
+      - web-proxy
+
+networks:
+  web-proxy:
+    external: true

@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0.0",
+  "id": "P2",
+  "name": "股价运行方向原则",
+  "category": "technical",
+  "scope": "使用日K线审核买入机会的上市股票",
+  "rule_type": "buy_required",
+  "data": {
+    "price_adjustment": "forward_adjusted",
+    "frequency": "daily",
+    "price_field": "close",
+    "as_of": "审核日最近一个已收盘交易日",
+    "main_window_trading_days": 30,
+    "short_window_trading_days": 10,
+    "preferred_source": "东方财富前复权日K收盘价"
+  },
+  "regression": {
+    "model": "ln(close_i) = a + b * i + epsilon_i",
+    "normalized_daily_trend_pct": "(exp(b) - 1) * 100",
+    "endpoint_daily_change_pct": "(close_last / close_first - 1) / (n - 1) * 100",
+    "main_metrics": ["G30", "E30", "R2_30"],
+    "short_metrics": ["G10", "E10", "R2_10"],
+    "stable_r2_min_inclusive": 0.6,
+    "classification_metric": "G30",
+    "classification_override_by_visual_judgement": false
+  },
+  "thresholds": {
+    "stable_r2_min_inclusive": 0.6,
+    "flat_g30_min_inclusive_pct": -0.15,
+    "flat_g30_max_inclusive_pct": 0.15,
+    "fast_move_abs_threshold_pct": 0.5,
+    "clock_one_max_trading_days_inclusive": 10,
+    "clock_one_max_return_pct_inclusive": 15.0
+  },
+  "clock_classification": [
+    {
+      "clock": 1,
+      "name": "快速上升",
+      "all": ["G30 > 0.50", "R2_30 >= 0.60"]
+    },
+    {
+      "clock": 2,
+      "name": "稳步上升",
+      "all": ["G30 > 0.15", "G30 <= 0.50", "R2_30 >= 0.60"],
+      "preference": "highest"
+    },
+    {
+      "clock": 3,
+      "name": "横盘/震荡",
+      "any": [
+        "G30 >= -0.15 and G30 <= 0.15",
+        "R2_30 < 0.60"
+      ]
+    },
+    {
+      "clock": 4,
+      "name": "缓慢下降",
+      "all": ["G30 >= -0.50", "G30 < -0.15", "R2_30 >= 0.60"],
+      "hard_veto": true
+    },
+    {
+      "clock": 5,
+      "name": "快速下降",
+      "all": ["G30 < -0.50", "R2_30 >= 0.60"]
+    }
+  ],
+  "direction_stability": {
+    "unstable_when": "sign(G30) != sign(E30)",
+    "decision": "insufficient_information",
+    "restriction": "不得给出无保留通过结论"
+  },
+  "short_acceleration": {
+    "does_not_change_clock_classification": true,
+    "labels": [
+      {
+        "when": "sign(G10) != sign(G30)",
+        "label": "短期与主方向背离"
+      },
+      {
+        "when": "sign(G10) == sign(G30) and abs(G10) > abs(G30)",
+        "label": "短期加速"
+      },
+      {
+        "when": "sign(G10) == sign(G30) and abs(G10) < abs(G30)",
+        "label": "短期减速"
+      },
+      {
+        "when": "G10 == G30",
+        "label": "速度基本一致"
+      }
+    ],
+    "unstable_when": "sign(G10) != sign(E10) or R2_10 < 0.60",
+    "missing_data_policy": "仍可按完整30日数据分类，但必须注明短期加速度信息不足"
+  },
+  "clock_1_entry_window": {
+    "entry_day": "当前连续1点钟区间的首个交易日；该日满足1点钟而前一交易日不满足",
+    "continuous_interval": "进入日起每个交易日均满足 G30 > 0.50 且 R2_30 >= 0.60；中断后重新计入",
+    "trading_day_condition": "days_since_entry_inclusive >= 1 and days_since_entry_inclusive <= 10",
+    "return_since_entry_pct": "(close_current / close_entry - 1) * 100",
+    "return_condition": "return_since_entry_pct <= 15",
+    "pass_logic": "trading_day_condition or return_condition",
+    "fail_logic": "days_since_entry_inclusive > 10 and return_since_entry_pct > 15",
+    "missing_entry_data_result": "insufficient_information"
+  },
+  "evaluation_by_clock": {
+    "1": {
+      "pass_when": "clock_1_entry_window.pass_logic",
+      "fail_when": "clock_1_entry_window.fail_logic"
+    },
+    "2": {
+      "result": "pass"
+    },
+    "3": {
+      "dependency": "P1.state == dense",
+      "dependency_passed": "pass",
+      "dependency_failed": "fail"
+    },
+    "4": {
+      "result": "fail",
+      "hard_veto": true
+    },
+    "5": {
+      "cases": [
+        {
+          "when": "close <= MA10",
+          "result": "fail"
+        },
+        {
+          "when": "close > MA10 and close <= MA20",
+          "result": "conditional_pass"
+        },
+        {
+          "when": "close > MA10 and close > MA20",
+          "result": "pass"
+        }
+      ]
+    }
+  },
+  "insufficient_information_conditions": [
+    "G30 与 E30 方向相反",
+    "缺少足够数据完成滚动30日主回归",
+    "无法计算 R2_30",
+    "当前分类所需的 MA10、MA20 或 P1 均线密集状态缺失",
+    "1点钟方向缺少进入日或进入日收盘价且两项窗口条件均无法判断"
+  ],
+  "required_disclosures": [
+    "data_as_of_date",
+    "G30",
+    "E30",
+    "R2_30",
+    "G10_or_missing",
+    "E10_or_missing",
+    "R2_10_or_missing",
+    "short_acceleration_label",
+    "clock",
+    "MA10_if_required",
+    "MA20_if_required",
+    "P1_dense_state_if_required",
+    "entry_day_and_return_if_clock_1",
+    "result",
+    "reason"
+  ],
+  "exceptions": []
+}

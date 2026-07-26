@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0.0",
+  "id": "P1",
+  "name": "均线排列原则",
+  "category": "technical",
+  "scope": "使用日K线审核的上市股票",
+  "rule_type": "required_with_preferences",
+  "data": {
+    "price_adjustment": "forward_adjusted",
+    "frequency": "daily",
+    "price_field": "close",
+    "as_of": "审核日最近一个已收盘交易日",
+    "intraday_final_judgement_allowed": false,
+    "minimum_history_requirement": "足以计算最近连续120个交易日的全部均线",
+    "moving_average_periods": [5, 10, 20, 60],
+    "preferred_source": "东方财富前复权日K收盘价"
+  },
+  "metrics": {
+    "MA5": "SMA(close, 5)",
+    "MA10": "SMA(close, 10)",
+    "MA20": "SMA(close, 20)",
+    "MA60": "SMA(close, 60)",
+    "density_pct": "(max(MA5, MA10, MA20, MA60) - min(MA5, MA10, MA20, MA60)) / close * 100",
+    "ma_average": "(MA5 + MA10 + MA20 + MA60) / 4",
+    "slope_10_pct_per_day": "(MA_t / MA_t_minus_10 - 1) / 10 * 100"
+  },
+  "state_definitions": {
+    "bullish_alignment": {
+      "all": [
+        "MA5 > MA10",
+        "MA10 > MA20",
+        "MA20 > MA60",
+        "S10_MA5 > 0",
+        "S10_MA10 > 0",
+        "S10_MA20 > 0",
+        "S10_MA60 > 0"
+      ]
+    },
+    "bearish_alignment": {
+      "all": [
+        "MA5 < MA10",
+        "MA10 < MA20",
+        "MA20 < MA60",
+        "S10_MA5 < 0",
+        "S10_MA10 < 0",
+        "S10_MA20 < 0",
+        "S10_MA60 < 0"
+      ]
+    },
+    "direction_divergence": {
+      "when": "四条均线的 S10 正负混合",
+      "restriction": "不得仅凭均线大小关系断言整体方向"
+    },
+    "dense": {
+      "lookback_trading_days": 3,
+      "threshold_pct": 3.0,
+      "condition_each_day": "density_pct <= 3.0"
+    },
+    "divergent": {
+      "all": [
+        "not dense",
+        "moving_average_spacing_expanding"
+      ]
+    },
+    "transition_entangled": {
+      "all": [
+        "not dense",
+        "moving_average_spacing_not_clearly_expanding"
+      ]
+    }
+  },
+  "evaluation": [
+    {
+      "state": "divergent",
+      "required_conditions": [
+        {
+          "id": "mid_long_order",
+          "expression": "MA20 > MA60"
+        },
+        {
+          "id": "mid_long_not_clearly_bearish",
+          "expression": "中长期均线方向不得呈明确空头状态"
+        }
+      ],
+      "preferences": [
+        {
+          "id": "short_order",
+          "expression": "MA5 > MA10"
+        },
+        {
+          "id": "close_above_ma10",
+          "expression": "close > MA10"
+        }
+      ],
+      "decision": {
+        "required_failed": "fail",
+        "required_passed_and_any_preference_failed": "conditional_pass",
+        "all_passed": "pass"
+      }
+    },
+    {
+      "state": "dense",
+      "required_conditions": [
+        {
+          "id": "close_above_ma_average",
+          "expression": "close > ma_average",
+          "boundary": "close == ma_average 时不通过"
+        }
+      ],
+      "decision": {
+        "required_failed": "fail",
+        "required_passed": "pass"
+      }
+    },
+    {
+      "state": "transition_entangled",
+      "decision": {
+        "result": "insufficient_information",
+        "compatible_label": "conditional_pass",
+        "reason": "尚未形成用户定义的明确技术状态"
+      }
+    }
+  ],
+  "insufficient_information_conditions": [
+    "历史数据不足以计算要求的均线与连续状态",
+    "复权方式或计算周期无法核对",
+    "无法确定均线间距是否扩大"
+  ],
+  "required_disclosures": [
+    "data_as_of_date",
+    "close",
+    "MA5",
+    "MA10",
+    "MA20",
+    "MA60",
+    "S10_MA5",
+    "S10_MA10",
+    "S10_MA20",
+    "S10_MA60",
+    "density_pct_for_latest_3_days",
+    "technical_state",
+    "condition_results",
+    "result",
+    "reason"
+  ],
+  "exceptions": []
+}
