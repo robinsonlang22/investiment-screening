@@ -13,3 +13,6 @@ dependencies = [
 dev = [
     "httpx>=0.28.0",
 ]
+
+[tool.setuptools]
+packages = ["api", "rules", "engine"]
