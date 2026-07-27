@@ -136,6 +136,127 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(len(adapted["rows"]), 1)
         self.assertEqual(adapted["rows"][0]["close"], 10.5)
 
+    def test_mcp_metadata_wide_rows_flow_to_all_adapters(self):
+        margin = adapt_margin_history(
+            [
+                {
+                    "证券": "融资余额",
+                    "2026-07-23(日)": "181.2亿元",
+                    "2026-07-24(日)": "179.1亿元",
+                    "_sheet_name": "贵州茅台(600519.SH)的融资余额",
+                    "_metric": "融资余额",
+                    "_original_unit": "亿元",
+                }
+            ]
+        )
+        cap = adapt_market_cap(
+            [
+                {
+                    "证券": "自由流通市值",
+                    "2026-07-24": "8109亿",
+                    "_sheet_name": "贵州茅台(600519.SH)的自由流通市值",
+                    "_metric": "自由流通市值",
+                    "_original_unit": "亿人民币",
+                }
+            ]
+        )
+        market_margin = adapt_market_margin_history(
+            [
+                {
+                    "板块": "融资余额(合计)",
+                    "2026-07-23(日)": "2.563万亿",
+                    "2026-07-24(日)": "2.541万亿",
+                    "_sheet_name": "全部A股(板块)的融资余额(合计)",
+                    "_metric": "全部A股市场融资余额合计",
+                    "_original_unit": "万亿元",
+                }
+            ]
+        )
+
+        self.assertEqual(len(margin["rows"]), 2)
+        self.assertEqual(margin["rows"][-1]["margin_balance"], 17_910_000_000)
+        self.assertEqual(
+            cap["rows"][0]["free_float_market_cap"],
+            810_900_000_000,
+        )
+        self.assertEqual(len(market_margin["rows"]), 2)
+        self.assertEqual(
+            market_margin["rows"][-1]["market_margin_balance"],
+            2_541_000_000_000,
+        )
+
+    def test_mcp_wide_payloads_pass_all_validators(self):
+        price_dates = trading_dates(120)
+        margin_dates = price_dates[-21:]
+        price = adapt_price_history(
+            [
+                {
+                    "贵州茅台(600519.SH)": "收盘价",
+                    **{
+                        day: f"{1200 + index}元"
+                        for index, day in enumerate(price_dates)
+                    },
+                    "_sheet_name": "贵州茅台(600519.SH)的开盘价、成交量等",
+                    "_metric": "收盘价",
+                    "_source": "mx_ashare_finance_data",
+                    "_original_unit": None,
+                }
+            ],
+            adjustment="forward",
+        )
+        margin = adapt_margin_history(
+            [
+                {
+                    "贵州茅台(600519.SH)": "融资余额",
+                    **{
+                        f"{day}(日)": f"{180 + index / 10}亿元"
+                        for index, day in enumerate(margin_dates)
+                    },
+                    "_sheet_name": "贵州茅台(600519.SH)的融资余额",
+                    "_metric": "融资余额",
+                    "_source": "mx_ashare_finance_data",
+                    "_original_unit": "亿元",
+                }
+            ]
+        )
+        cap = adapt_market_cap(
+            [
+                {
+                    "贵州茅台(600519.SH)": "自由流通市值",
+                    margin_dates[-1]: "8109亿",
+                    "_metric": "自由流通市值",
+                    "_original_unit": "亿人民币",
+                }
+            ]
+        )
+        market_margin = adapt_market_margin_history(
+            [
+                {
+                    "全部A股(板块)": "融资余额(合计)",
+                    **{
+                        f"{day}(日)": f"{2.5 + index / 1000}万亿"
+                        for index, day in enumerate(margin_dates)
+                    },
+                    "_metric": "全部A股市场融资余额合计",
+                    "_original_unit": "万亿元",
+                }
+            ]
+        )
+
+        self.assertEqual(
+            validate_price_history(price, minimum_observations=120)["status"],
+            "VALID",
+        )
+        self.assertEqual(validate_margin_history(margin)["status"], "VALID")
+        self.assertEqual(
+            validate_market_cap(cap, margin_dates[-1])["status"],
+            "VALID",
+        )
+        self.assertEqual(
+            validate_market_margin_history(market_margin)["status"],
+            "VALID",
+        )
+
     def test_date_cleaning(self):
         self.assertEqual(normalize_date("2026-07-24"), "2026-07-24")
         self.assertEqual(normalize_date("2026-07-24(日)"), "2026-07-24")

@@ -33,9 +33,10 @@ _METRIC_KEYS = (
     "name",
     "指标",
     "项目",
+    "_metric",
     "_sheet_name",
 )
-_UNIT_KEYS = ("unit", "currency", "单位", "币种")
+_UNIT_KEYS = ("unit", "currency", "单位", "币种", "_original_unit")
 _WRAPPER_KEYS = ("rows", "data", "records", "results", "items", "values")
 
 _VALUE_ALIASES = {
@@ -69,6 +70,9 @@ _METRIC_ALIASES = {
         "total_margin_balance",
         "两市融资融券余额",
         "全市场两融余额",
+        "融资余额(合计)",
+        "融资余额（合计）",
+        "全部a股市场融资余额合计",
     },
 }
 
