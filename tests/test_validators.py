@@ -4,7 +4,6 @@ from engine.validators import (
     validate_margin_history,
     validate_market_cap,
     validate_price_history,
-    validate_rule_inputs,
 )
 from tests.helpers import trading_dates
 
@@ -24,11 +23,6 @@ class ValidatorTests(unittest.TestCase):
             validate_price_history(dataset, minimum_observations=120)["status"],
             "VALID",
         )
-        self.assertEqual(
-            validate_rule_inputs("P1", {"price_history": dataset})["status"],
-            "VALID",
-        )
-
     def test_price_duplicates_order_null_and_adjustment(self):
         rows = [
             {"date": "2025-01-03", "close": 10, "adjustment": "none"},

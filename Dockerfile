@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml ./
 COPY app.py ./
 COPY api ./api
 COPY engine ./engine

@@ -371,33 +371,6 @@ def _is_date_column(key: Any) -> bool:
     return normalize_date(key) is not None
 
 
-def wide_to_long(
-    rows: Sequence[Mapping[str, Any]],
-    *,
-    id_columns: Sequence[str] = (),
-    variable_name: str = "date",
-    value_name: str = "value",
-) -> list[dict[str, Any]]:
-    """Unpivot columns whose names are parseable dates."""
-
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, Mapping):
-            raise AdapterError("every wide-table row must be a mapping")
-        identifiers = {key: row[key] for key in id_columns if key in row}
-        for key, value in row.items():
-            if key in id_columns or not _is_date_column(key):
-                continue
-            result.append(
-                {
-                    **identifiers,
-                    variable_name: clean_date(key),
-                    value_name: None if is_null_token(value) else value,
-                }
-            )
-    return result
-
-
 def _metric_name(row: Mapping[str, Any]) -> str | None:
     value, _ = _first(row, _METRIC_KEYS)
     return str(value).strip().lower() if value is not None else None

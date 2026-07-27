@@ -155,28 +155,6 @@ def calculate_density_series(
     return result
 
 
-def classify_ma_direction(
-    slopes: Mapping[Any, float | None] | Sequence[float | None],
-) -> str:
-    """Classify the objective direction of a set of MA slopes.
-
-    Returns ``UP`` only when every slope is positive, ``DOWN`` only when every
-    slope is negative, and ``DIVERGENT`` for mixed, zero or missing slopes.
-    """
-
-    values = list(slopes.values()) if isinstance(slopes, Mapping) else list(slopes)
-    if not values or any(value is None for value in values):
-        return "DIVERGENT"
-    numbers = [float(value) for value in values if value is not None]
-    if any(not isfinite(value) for value in numbers):
-        raise ValueError("slopes must contain finite numbers or None")
-    if all(value > 0 for value in numbers):
-        return "UP"
-    if all(value < 0 for value in numbers):
-        return "DOWN"
-    return "DIVERGENT"
-
-
 def calculate_log_regression(closes: Sequence[float]) -> dict[str, float]:
     """Regress log closes on ``0..n-1`` and return G, E and R-squared."""
 

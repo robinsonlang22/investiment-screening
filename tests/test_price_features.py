@@ -8,7 +8,6 @@ from engine.price_features import (
     calculate_ma_slope,
     calculate_price_regression_features,
     calculate_rolling_clock_features,
-    classify_ma_direction,
     latest_moving_averages,
     moving_average,
 )
@@ -30,10 +29,6 @@ class PriceFeatureTests(unittest.TestCase):
             isclose(calculate_ma_slope([100.0] * 10 + [110.0]), 1.0)
         )
         self.assertTrue(isclose(calculate_ma_density(100, 99, 100, 101, 102), 3))
-        self.assertEqual(classify_ma_direction([1, 2]), "UP")
-        self.assertEqual(classify_ma_direction([-1, -2]), "DOWN")
-        self.assertEqual(classify_ma_direction([-1, 2]), "DIVERGENT")
-
     def test_log_regression_and_rolling_alignment(self):
         closes = [100 * 1.01**index for index in range(40)]
         regression = calculate_log_regression(closes[-30:])

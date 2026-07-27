@@ -73,7 +73,9 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertFalse(body["valid"])
+        self.assertTrue(body["valid"])
+        self.assertFalse(body["complete"])
+        self.assertEqual(body["processable_rules"], ["P1", "P2"])
         self.assertTrue(body["retryable"])
         self.assertIn("margin_history", body["missing_fields"])
         self.assertIn("free_float_market_cap", body["missing_fields"])
@@ -90,6 +92,7 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prepared_response.status_code, 200)
         prepared = prepared_response.json()
         self.assertTrue(prepared["valid"])
+        self.assertTrue(prepared["complete"])
         self.assertFalse(prepared["retryable"])
         self.assertEqual(prepared["missing_fields"], [])
         self.assertEqual(len(prepared["normalized_data"]["price_rows"]), 120)
@@ -113,7 +116,7 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(evaluated["report_constraints"]["may_recalculate"])
         self.assertFalse(evaluated["report_constraints"]["may_override_status"])
 
-    async def test_evaluate_rejects_unprepared_data(self):
+    async def test_evaluate_degrades_missing_inputs_by_rule(self):
         response = await self.client.post(
             "/evaluate",
             json={
@@ -121,8 +124,47 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
                 "normalized_data": {},
             },
         )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["error"], "INVALID_ENGINE_INPUT")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["decision"], "information_insufficient")
+        self.assertEqual(
+            {result["status"] for result in body["results"].values()},
+            {"INSUFFICIENT_INFORMATION"},
+        )
+
+    async def test_price_only_evaluates_p1_p2_and_degrades_f1(self):
+        prepared_response = await self.client.post(
+            "/prepare",
+            json={
+                "symbol": "301536.SZ",
+                "raw_data": {
+                    "price_history": self.raw_data["price_history"],
+                },
+            },
+        )
+        prepared = prepared_response.json()
+        evaluated_response = await self.client.post(
+            "/evaluate",
+            json={
+                "symbol": "301536.SZ",
+                "normalized_data": prepared["normalized_data"],
+                "data_quality": prepared["data_quality"],
+            },
+        )
+        self.assertEqual(evaluated_response.status_code, 200)
+        evaluated = evaluated_response.json()
+        self.assertNotIn("missing_inputs", evaluated["results"]["p1"])
+        self.assertNotIn("missing_inputs", evaluated["results"]["p2"])
+        self.assertIn("metrics", evaluated["results"]["p1"])
+        self.assertIn("metrics", evaluated["results"]["p2"])
+        self.assertEqual(
+            evaluated["results"]["f1"]["status"],
+            "INSUFFICIENT_INFORMATION",
+        )
+        self.assertEqual(
+            evaluated["results"]["f1"]["missing_inputs"],
+            ["margin_history", "free_float_market_cap"],
+        )
 
 
 if __name__ == "__main__":

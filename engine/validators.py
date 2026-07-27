@@ -384,7 +384,6 @@ def validate_margin_history(
         )
     return _finish(valid_rows, issues)
 
-
 def validate_market_cap(rows: Any, target_date: Any) -> dict[str, Any]:
     """Select the closest valid FFMC observation not later than target_date."""
 
@@ -532,86 +531,3 @@ def validate_market_margin_history(rows: Any) -> dict[str, Any]:
             _issue("INSUFFICIENT_OBSERVATIONS", "至少需要两个相邻的全市场两融余额数据点")
         )
     return _finish(valid_rows, issues)
-
-
-def _validate_indicator(name: str, value: Any) -> list[dict[str, Any]]:
-    if value is None:
-        return [_issue("MISSING_INDICATOR", f"P2 缺少 {name}")]
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return [_issue("INVALID_INDICATOR", f"P2 的 {name} 必须是数字")]
-    if not isfinite(number):
-        return [_issue("INVALID_INDICATOR", f"P2 的 {name} 必须是有限数字")]
-    return []
-
-
-def validate_rule_inputs(rule_id: str, datasets: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate the datasets required by P1, P2 or F1.
-
-    Expected keys:
-      * P1: ``price_history``
-      * P2: ``price_history`` plus ``MA10``, ``MA20`` and ``density``
-      * F1: ``margin_history`` and ``market_cap``
-    """
-
-    normalised_rule_id = str(rule_id).strip().upper()
-    if not isinstance(datasets, Mapping):
-        return {
-            "status": "INVALID",
-            "rule_id": normalised_rule_id,
-            "dataset_results": {},
-            "issues": [_issue("INVALID_DATASETS", "datasets 必须是字典")],
-        }
-
-    results: dict[str, Any] = {}
-    issues: list[dict[str, Any]] = []
-
-    if normalised_rule_id == "P1":
-        results["price_history"] = validate_price_history(
-            datasets.get("price_history", []),
-            minimum_observations=120,
-            required_adjustment="forward",
-        )
-    elif normalised_rule_id == "P2":
-        results["price_history"] = validate_price_history(
-            datasets.get("price_history", []),
-            minimum_observations=30,
-            required_adjustment="forward",
-        )
-        indicators = datasets.get("indicators", datasets)
-        for name in ("MA10", "MA20", "density"):
-            issues.extend(_validate_indicator(name, indicators.get(name)))
-    elif normalised_rule_id == "F1":
-        margin_data = datasets.get("margin_history", [])
-        results["margin_history"] = validate_margin_history(
-            margin_data, minimum_observations=21
-        )
-        margin_rows, _, _ = _unpack_dataset(margin_data)
-        latest_margin_date = max(
-            (
-                parsed
-                for row in margin_rows
-                if isinstance(row, Mapping)
-                for parsed in [_parse_date(_first_value(row, _DATE_KEYS)[0])]
-                if parsed is not None
-            ),
-            default=None,
-        )
-        results["market_cap"] = validate_market_cap(
-            datasets.get("market_cap", []), latest_margin_date
-        )
-    else:
-        issues.append(_issue("UNKNOWN_RULE", f"不支持的规则 ID：{rule_id}"))
-
-    for dataset_name, result in results.items():
-        if result["status"] != "VALID":
-            for item in result["issues"]:
-                issues.append({"dataset": dataset_name, **item})
-
-    return {
-        "status": "VALID" if not issues else "INVALID",
-        "rule_id": normalised_rule_id,
-        "dataset_results": results,
-        "issues": issues,
-    }

@@ -309,9 +309,23 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
                 "全市场两融余额适配失败，系统性去杠杆人工复核能力不可用"
             )
 
-    valid = not missing_fields
+    processable_rules: list[str] = []
+    if normalized_data.get("price_rows"):
+        processable_rules.extend(("P1", "P2"))
+    if (
+        normalized_data.get("margin_rows")
+        and normalized_data.get("free_float_market_cap") is not None
+    ):
+        processable_rules.append("F1")
+
+    complete = not missing_fields
+    valid = bool(processable_rules)
     data_quality = {
-        "status": "VALID" if valid else "INVALID",
+        "status": (
+            "VALID"
+            if complete
+            else ("PARTIAL" if valid else "INVALID")
+        ),
         "validation": validation,
         "adapter_errors": adapter_errors,
         "adapter_warnings": adapter_warnings,
@@ -323,7 +337,9 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
     return {
         "symbol": request.symbol,
         "valid": valid,
-        "retryable": not valid,
+        "complete": complete,
+        "processable_rules": processable_rules,
+        "retryable": bool(missing_fields),
         "normalized_data": normalized_data,
         "missing_fields": missing_fields,
         "recommended_queries": recommended_queries,
@@ -332,44 +348,85 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
     }
 
 
-def _validate_normalized_data(data: dict[str, Any]) -> dict[str, Any]:
-    missing = [
-        field
-        for field in ("price_rows", "margin_rows", "free_float_market_cap")
-        if data.get(field) is None
-    ]
-    if missing:
-        raise ValueError(
-            "normalized_data is incomplete; call /prepare first. Missing: "
-            + ", ".join(missing)
-        )
+def _validate_available_normalized_data(
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate each available rule input without blocking unrelated rules."""
 
-    price_result = validate_price_history(
-        {
-            "rows": data["price_rows"],
-            "adjustment": "forward",
-        },
-        minimum_observations=120,
-        required_adjustment="forward",
-    )
-    margin_result = validate_margin_history(
-        {
-            "rows": data["margin_rows"],
-            "unit": "CNY",
-            "metric": "margin_balance",
-        },
-        minimum_observations=21,
-    )
-    if price_result["status"] != "VALID" or margin_result["status"] != "VALID":
-        raise ValueError("normalized_data failed validation; call /prepare again")
-    market_cap = float(data["free_float_market_cap"])
-    if market_cap <= 0:
-        raise ValueError("free_float_market_cap must be positive")
-    return {
-        "price_rows": price_result["valid_rows"],
-        "margin_rows": margin_result["valid_rows"],
-        "free_float_market_cap": market_cap,
+    result: dict[str, Any] = {
+        "price_rows": None,
+        "margin_rows": None,
+        "free_float_market_cap": None,
         "market_margin_rows": data.get("market_margin_rows"),
+        "input_issues": {},
+    }
+
+    if data.get("price_rows") is not None:
+        price_result = validate_price_history(
+            {
+                "rows": data["price_rows"],
+                "adjustment": "forward",
+            },
+            minimum_observations=120,
+            required_adjustment="forward",
+        )
+        if price_result["status"] == "VALID":
+            result["price_rows"] = price_result["valid_rows"]
+        else:
+            result["input_issues"]["price_history"] = price_result.get(
+                "issues", []
+            )
+
+    if data.get("margin_rows") is not None:
+        margin_result = validate_margin_history(
+            {
+                "rows": data["margin_rows"],
+                "unit": "CNY",
+                "metric": "margin_balance",
+            },
+            minimum_observations=21,
+        )
+        if margin_result["status"] == "VALID":
+            result["margin_rows"] = margin_result["valid_rows"]
+        else:
+            result["input_issues"]["margin_history"] = margin_result.get(
+                "issues", []
+            )
+
+    market_cap = data.get("free_float_market_cap")
+    if market_cap is not None:
+        try:
+            parsed_market_cap = float(market_cap)
+        except (TypeError, ValueError):
+            parsed_market_cap = 0.0
+        if parsed_market_cap > 0:
+            result["free_float_market_cap"] = parsed_market_cap
+        else:
+            result["input_issues"]["free_float_market_cap"] = [
+                {
+                    "code": "INVALID_FREE_FLOAT_MARKET_CAP",
+                    "message": "free_float_market_cap must be positive",
+                }
+            ]
+
+    return result
+
+
+def _insufficient_rule(
+    rule_id: str,
+    missing_inputs: list[str],
+) -> dict[str, Any]:
+    return {
+        "rule_id": rule_id,
+        "required": True,
+        "status": "INSUFFICIENT_INFORMATION",
+        "hard_veto": False,
+        "checks": [],
+        "derived_metrics": {},
+        "missing_inputs": missing_inputs,
+        "reasons": [
+            "缺少可安全计算该原则的数据；其他具备数据的原则已继续计算"
+        ],
     }
 
 
@@ -403,23 +460,39 @@ async def prepare(request: PrepareRequest) -> dict[str, Any]:
 
 @app.post("/evaluate")
 async def evaluate(request: EvaluateRequest) -> dict[str, Any]:
-    """Validated data -> Features -> P1/P2/F1 -> Aggregator."""
+    """Calculate every rule whose inputs are available; degrade others."""
 
-    data = _validate_normalized_data(request.normalized_data)
-    price_features = _build_price_features(data["price_rows"])
-    margin_features = build_f1_features(
-        data["margin_rows"],
-        data["free_float_market_cap"],
-        data["market_margin_rows"],
-    )
+    data = _validate_available_normalized_data(request.normalized_data)
 
-    p1 = evaluate_p1(
-        price_features,
-        spread_expanding=request.spread_expanding,
-        rule_config=_rule("P1"),
-    )
-    p2 = evaluate_p2(price_features, p1, _rule("P2"))
-    f1 = evaluate_f1(margin_features, _rule("F1"))
+    if data["price_rows"] is not None:
+        price_features = _build_price_features(data["price_rows"])
+        p1 = evaluate_p1(
+            price_features,
+            spread_expanding=request.spread_expanding,
+            rule_config=_rule("P1"),
+        )
+        p2 = evaluate_p2(price_features, p1, _rule("P2"))
+    else:
+        p1 = _insufficient_rule("P1", ["price_history"])
+        p2 = _insufficient_rule("P2", ["price_history"])
+
+    if (
+        data["margin_rows"] is not None
+        and data["free_float_market_cap"] is not None
+    ):
+        margin_features = build_f1_features(
+            data["margin_rows"],
+            data["free_float_market_cap"],
+            data["market_margin_rows"],
+        )
+        f1 = evaluate_f1(margin_features, _rule("F1"))
+    else:
+        missing_f1_inputs = []
+        if data["margin_rows"] is None:
+            missing_f1_inputs.append("margin_history")
+        if data["free_float_market_cap"] is None:
+            missing_f1_inputs.append("free_float_market_cap")
+        f1 = _insufficient_rule("F1", missing_f1_inputs)
     rule_results = [p1, p2, f1]
 
     completeness = validate_evaluation_completeness(
@@ -430,6 +503,8 @@ async def evaluate(request: EvaluateRequest) -> dict[str, Any]:
         raise ValueError(f"internal evaluation incomplete: {completeness}")
 
     data_quality = deepcopy(request.data_quality)
+    if data["input_issues"]:
+        data_quality["evaluation_input_issues"] = data["input_issues"]
     data_quality["evaluation_completeness"] = completeness
     bundle = build_evaluation_bundle(
         request.symbol,

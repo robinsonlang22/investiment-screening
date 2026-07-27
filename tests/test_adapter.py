@@ -11,7 +11,6 @@ from engine.adapter import (
     expand_choice_tables,
     normalize_date,
     normalize_number,
-    wide_to_long,
 )
 from engine.validators import (
     validate_margin_history,
@@ -300,19 +299,6 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(adapted["rows"][2]["margin_balance"], 130_000_000)
         self.assertEqual(len(adapted["warnings"]), 1)
         self.assertEqual(adapted["warnings"][0]["row"], 2)
-
-    def test_generic_wide_to_long(self):
-        result = wide_to_long(
-            [{"指标": "融资余额", "2026/07/01": "1", "2026/07/02": "-"}],
-            id_columns=("指标",),
-        )
-        self.assertEqual(
-            result,
-            [
-                {"指标": "融资余额", "date": "2026-07-01", "value": "1"},
-                {"指标": "融资余额", "date": "2026-07-02", "value": None},
-            ],
-        )
 
     def test_wide_margin_to_engine_and_validator(self):
         dates = trading_dates(21)
