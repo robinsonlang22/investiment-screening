@@ -142,6 +142,18 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
     normalized_data: dict[str, Any] = {}
     validation: dict[str, Any] = {}
     adapter_errors: dict[str, str] = {}
+    adapter_warnings: dict[str, list[dict[str, Any]]] = {}
+
+    def capture_adapter_warnings(
+        dataset_name: str, adapted: dict[str, Any]
+    ) -> None:
+        dataset_warnings = adapted.get("warnings", [])
+        if not isinstance(dataset_warnings, list) or not dataset_warnings:
+            return
+        adapter_warnings[dataset_name] = dataset_warnings
+        warnings.append(
+            f"{dataset_name} 有 {len(dataset_warnings)} 个值无法完整解析，已转换为 null"
+        )
 
     raw = request.raw_data
     options = request.adapter_options
@@ -160,6 +172,7 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
                 "price_history",
                 **_adapter_options(options, "price_history"),
             )
+            capture_adapter_warnings("price_history", adapted)
             result = validate_price_history(
                 adapted,
                 minimum_observations=120,
@@ -198,6 +211,7 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
                 "margin_history",
                 **_adapter_options(options, "margin_history"),
             )
+            capture_adapter_warnings("margin_history", adapted)
             result = validate_margin_history(adapted, minimum_observations=21)
             validation["margin_history"] = result
             if result["status"] == "VALID":
@@ -241,6 +255,7 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
                 "market_cap",
                 **_adapter_options(options, "market_cap"),
             )
+            capture_adapter_warnings("market_cap", adapted)
             result = validate_market_cap(adapted, target_date)
             validation["market_cap"] = result
             selected = result.get("selected_row")
@@ -277,6 +292,7 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
                 "market_margin_history",
                 **_adapter_options(options, "market_margin_history"),
             )
+            capture_adapter_warnings("market_margin_history", adapted)
             result = validate_market_margin_history(adapted)
             validation["market_margin_history"] = result
             if result["status"] == "VALID":
@@ -298,6 +314,7 @@ def _prepare_data(request: PrepareRequest) -> dict[str, Any]:
         "status": "VALID" if valid else "INVALID",
         "validation": validation,
         "adapter_errors": adapter_errors,
+        "adapter_warnings": adapter_warnings,
         "issue_codes": {
             name: _issue_codes(result)
             for name, result in validation.items()

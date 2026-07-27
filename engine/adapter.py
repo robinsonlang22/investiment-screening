@@ -26,7 +26,15 @@ class AdapterError(ValueError):
 
 _NULL_TOKENS = {"", "-", "--", "—", "null", "none", "nan", "n/a", "na"}
 _DATE_KEYS = ("date", "trade_date", "日期", "交易日期", "报告日期")
-_METRIC_KEYS = ("metric", "metric_name", "indicator", "name", "指标", "项目")
+_METRIC_KEYS = (
+    "metric",
+    "metric_name",
+    "indicator",
+    "name",
+    "指标",
+    "项目",
+    "_sheet_name",
+)
 _UNIT_KEYS = ("unit", "currency", "单位", "币种")
 _WRAPPER_KEYS = ("rows", "data", "records", "results", "items", "values")
 
@@ -64,6 +72,31 @@ _METRIC_ALIASES = {
     },
 }
 
+# Fields commonly returned alongside the requested metric.  Their presence
+# identifies a valid but irrelevant table/row, which should be ignored rather
+# than treated as a malformed representation of the requested dataset.
+_KNOWN_OTHER_VALUE_ALIASES = {
+    "price": {
+        "open",
+        "open_price",
+        "开盘价",
+        "high",
+        "high_price",
+        "最高价",
+        "low",
+        "low_price",
+        "最低价",
+        "change",
+        "change_pct",
+        "pct_change",
+        "区间涨跌幅",
+        "涨跌幅",
+    },
+    "margin": set(),
+    "market_cap": set(),
+    "market_margin": set(),
+}
+
 _UNIT_FACTORS = {
     "cny": 1.0,
     "rmb": 1.0,
@@ -73,6 +106,11 @@ _UNIT_FACTORS = {
     "万": 10_000.0,
     "亿元": 100_000_000.0,
     "亿": 100_000_000.0,
+    "万亿元": 1_000_000_000_000.0,
+    "万亿": 1_000_000_000_000.0,
+    "%": 1.0,
+    "倍": 1.0,
+    "次": 1.0,
 }
 
 
@@ -84,51 +122,90 @@ def is_null_token(value: Any) -> bool:
     )
 
 
-def clean_date(value: Any) -> str | None:
-    """Convert common MCP date representations to ISO ``YYYY-MM-DD``."""
+def normalize_date(value: Any) -> str | None:
+    """Normalize common MCP date forms without raising on invalid input."""
 
-    if is_null_token(value):
+    if is_null_token(value) or isinstance(value, bool):
         return None
     if isinstance(value, datetime):
         return value.date().isoformat()
     if isinstance(value, date):
         return value.isoformat()
-    if isinstance(value, bool):
-        raise AdapterError(f"invalid date value: {value!r}")
 
     text = str(value).strip()
+    text = re.sub(r"\([^)]*\)$", "", text).strip()
+    text = (
+        text.replace("年", "-")
+        .replace("月", "-")
+        .replace("日", "")
+        .replace("/", "-")
+        .replace(".", "-")
+    )
+
     if re.fullmatch(r"\d{8}", text):
-        formats = ("%Y%m%d",)
-    else:
-        text = (
-            text.replace("年", "-")
-            .replace("月", "-")
-            .replace("日", "")
-            .replace("/", "-")
-            .replace(".", "-")
-        )
-        # ISO timestamps are frequent in JSON MCP responses.
-        iso_candidate = text.replace("Z", "+00:00")
         try:
-            return datetime.fromisoformat(iso_candidate).date().isoformat()
+            return datetime.strptime(text, "%Y%m%d").date().isoformat()
         except ValueError:
-            formats = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S")
+            return None
 
-    for fmt in formats:
-        try:
-            return datetime.strptime(text, fmt).date().isoformat()
-        except ValueError:
-            continue
-    raise AdapterError(f"invalid date value: {value!r}")
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        pass
+
+    # Preserve support for ISO timestamps returned by some MCP tools.
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return None
 
 
-def normalize_number(value: Any, *, unit: str | None = None) -> float | None:
-    """Normalize a numeric MCP value, converting 万元/亿元 to CNY."""
+def clean_date(value: Any) -> str | None:
+    """Backward-compatible alias for the shared date normalizer."""
+
+    return normalize_date(value)
+
+
+def _numeric_warning(
+    warnings: list[dict[str, Any]] | None,
+    *,
+    code: str,
+    value: Any,
+    message: str,
+    context: Mapping[str, Any] | None,
+) -> None:
+    if warnings is None:
+        return
+    warning = {
+        "code": code,
+        "value": str(value),
+        "message": message,
+    }
+    if context:
+        warning.update(context)
+    warnings.append(warning)
+
+
+def normalize_number(
+    value: Any,
+    *,
+    unit: str | None = None,
+    warnings: list[dict[str, Any]] | None = None,
+    context: Mapping[str, Any] | None = None,
+) -> float | None:
+    """Normalize a value without aborting the dataset on a bad cell."""
 
     if is_null_token(value):
         return None
     if isinstance(value, bool):
-        raise AdapterError(f"invalid numeric value: {value!r}")
+        _numeric_warning(
+            warnings,
+            code="UNPARSEABLE_VALUE",
+            value=value,
+            message="布尔值不能作为数值解析",
+            context=context,
+        )
+        return None
 
     explicit_unit: str | None = None
     if isinstance(value, str):
@@ -136,32 +213,72 @@ def normalize_number(value: Any, *, unit: str | None = None) -> float | None:
         parenthesized = text.startswith("(") and text.endswith(")")
         if parenthesized:
             text = text[1:-1].strip()
-        for suffix in ("亿元", "万元", "人民币", "CNY", "RMB", "元", "亿", "万"):
+        for suffix in (
+            "万亿元",
+            "亿元",
+            "万元",
+            "人民币",
+            "CNY",
+            "RMB",
+            "万亿",
+            "元",
+            "亿",
+            "万",
+            "%",
+            "倍",
+            "次",
+        ):
             if text.lower().endswith(suffix.lower()):
                 explicit_unit = suffix
                 text = text[: -len(suffix)].strip()
                 break
         text = text.removeprefix("¥").removeprefix("￥").strip()
-        if text.endswith("%"):
-            text = text[:-1].strip()
         try:
             number = float(text)
-        except ValueError as exc:
-            raise AdapterError(f"invalid numeric value: {value!r}") from exc
+        except ValueError:
+            _numeric_warning(
+                warnings,
+                code="UNPARSEABLE_VALUE",
+                value=value,
+                message="无法解析数值",
+                context=context,
+            )
+            return None
         if parenthesized:
             number = -number
     else:
         try:
             number = float(value)
-        except (TypeError, ValueError) as exc:
-            raise AdapterError(f"invalid numeric value: {value!r}") from exc
+        except (TypeError, ValueError):
+            _numeric_warning(
+                warnings,
+                code="UNPARSEABLE_VALUE",
+                value=value,
+                message="无法解析数值",
+                context=context,
+            )
+            return None
 
     if not isfinite(number):
-        raise AdapterError(f"numeric value must be finite: {value!r}")
+        _numeric_warning(
+            warnings,
+            code="NON_FINITE_VALUE",
+            value=value,
+            message="数值必须为有限值",
+            context=context,
+        )
+        return None
     source_unit = explicit_unit or unit or "CNY"
     factor = _UNIT_FACTORS.get(str(source_unit).strip().lower())
     if factor is None:
-        raise AdapterError(f"unsupported unit: {source_unit!r}")
+        _numeric_warning(
+            warnings,
+            code="UNSUPPORTED_UNIT",
+            value=value,
+            message=f"不支持的单位：{source_unit}",
+            context=context,
+        )
+        return None
     return number * factor
 
 
@@ -170,6 +287,48 @@ def _first(row: Mapping[str, Any], keys: Sequence[str]) -> tuple[Any, str | None
         if key in row:
             return row[key], key
     return None, None
+
+
+def expand_choice_tables(raw_data: Any) -> list[dict[str, Any]]:
+    """Expand Choice-style ``columns``/``items`` tables into row mappings.
+
+    A payload may wrap one or more sheets in ``{"data": [...]}``. Ordinary
+    row mappings are preserved, so this function can safely run once at the
+    common adapter boundary before dataset-specific normalization.
+    """
+
+    if isinstance(raw_data, dict) and isinstance(raw_data.get("data"), list):
+        raw_data = raw_data["data"]
+
+    if not isinstance(raw_data, list):
+        return raw_data
+
+    expanded: list[dict[str, Any]] = []
+
+    for entry in raw_data:
+        if not isinstance(entry, dict):
+            expanded.append(entry)
+            continue
+
+        columns = entry.get("columns")
+        items = entry.get("items")
+
+        if not isinstance(columns, list) or not isinstance(items, list):
+            expanded.append(entry)
+            continue
+
+        for item in items:
+            if not isinstance(item, list):
+                continue
+
+            row = {
+                str(column): item[index] if index < len(item) else None
+                for index, column in enumerate(columns)
+            }
+            row["_sheet_name"] = entry.get("sheetName")
+            expanded.append(row)
+
+    return expanded
 
 
 def _unwrap_payload(payload: Any) -> tuple[list[Mapping[str, Any]], dict[str, Any]]:
@@ -205,10 +364,7 @@ def _unwrap_payload(payload: Any) -> tuple[list[Mapping[str, Any]], dict[str, An
 
 
 def _is_date_column(key: Any) -> bool:
-    try:
-        return clean_date(key) is not None
-    except AdapterError:
-        return False
+    return normalize_date(key) is not None
 
 
 def wide_to_long(
@@ -243,6 +399,10 @@ def _metric_name(row: Mapping[str, Any]) -> str | None:
     return str(value).strip().lower() if value is not None else None
 
 
+def _has_known_other_value(row: Mapping[str, Any], dataset_type: str) -> bool:
+    return any(key in row for key in _KNOWN_OTHER_VALUE_ALIASES[dataset_type])
+
+
 def _row_unit(row: Mapping[str, Any], metadata: Mapping[str, Any]) -> str | None:
     value, _ = _first(row, _UNIT_KEYS)
     if value is None:
@@ -255,13 +415,14 @@ def _standard_records(
     *,
     dataset_type: str,
     unit: str | None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     rows, metadata = _unwrap_payload(payload)
     aliases = _VALUE_ALIASES[dataset_type]
     metric_aliases = _METRIC_ALIASES[dataset_type]
     records: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
-    for row in rows:
+    for row_index, row in enumerate(rows):
         raw_date, _ = _first(row, _DATE_KEYS)
         raw_value, value_key = _first(row, aliases)
         source_unit = unit or _row_unit(row, metadata)
@@ -274,6 +435,8 @@ def _standard_records(
                     raw_value = generic_value
                 elif metric is not None and metric not in metric_aliases:
                     continue
+                elif _has_known_other_value(row, dataset_type):
+                    continue
                 else:
                     raise AdapterError(
                         f"long-table row is missing a {dataset_type} value"
@@ -281,7 +444,16 @@ def _standard_records(
             records.append(
                 {
                     "date": clean_date(raw_date),
-                    "value": normalize_number(raw_value, unit=source_unit),
+                    "value": normalize_number(
+                        raw_value,
+                        unit=source_unit,
+                        warnings=warnings,
+                        context={
+                            "row": row_index + 1,
+                            "date": clean_date(raw_date),
+                            "dataset_type": dataset_type,
+                        },
+                    ),
                 }
             )
             continue
@@ -301,12 +473,18 @@ def _standard_records(
                     "value": normalize_number(
                         row[date_column],
                         unit=source_unit,
+                        warnings=warnings,
+                        context={
+                            "row": row_index + 1,
+                            "date": clean_date(date_column),
+                            "dataset_type": dataset_type,
+                        },
                     ),
                 }
             )
 
     records.sort(key=lambda row: (row["date"] is None, row["date"] or ""))
-    return records, metadata
+    return records, metadata, warnings
 
 
 def _metadata_date(
@@ -328,7 +506,7 @@ def adapt_price_history(
 ) -> dict[str, Any]:
     """Adapt an MCP price table to ``validate_price_history`` input."""
 
-    records, metadata = _standard_records(
+    records, metadata, warnings = _standard_records(
         payload, dataset_type="price", unit="CNY"
     )
     source_adjustment = (
@@ -359,7 +537,11 @@ def adapt_price_history(
         }
         for record in records
     ]
-    result: dict[str, Any] = {"rows": rows, "adjustment": normalized_adjustment}
+    result: dict[str, Any] = {
+        "rows": rows,
+        "adjustment": normalized_adjustment,
+        "warnings": warnings,
+    }
     as_of = _metadata_date(
         metadata,
         latest_closed_date,
@@ -379,7 +561,9 @@ def adapt_margin_history(
 ) -> dict[str, Any]:
     """Adapt security financing balances, converting all values to CNY."""
 
-    records, _ = _standard_records(payload, dataset_type="margin", unit=unit)
+    records, _, warnings = _standard_records(
+        payload, dataset_type="margin", unit=unit
+    )
     return {
         "rows": [
             {
@@ -392,6 +576,7 @@ def adapt_margin_history(
         ],
         "unit": "CNY",
         "metric": "margin_balance",
+        "warnings": warnings,
     }
 
 
@@ -402,7 +587,9 @@ def adapt_market_cap(
 ) -> dict[str, Any]:
     """Adapt free-float market-cap observations to CNY."""
 
-    records, _ = _standard_records(payload, dataset_type="market_cap", unit=unit)
+    records, _, warnings = _standard_records(
+        payload, dataset_type="market_cap", unit=unit
+    )
     return {
         "rows": [
             {
@@ -413,6 +600,7 @@ def adapt_market_cap(
             for record in records
         ],
         "unit": "CNY",
+        "warnings": warnings,
     }
 
 
@@ -426,7 +614,7 @@ def adapt_market_margin_history(
 
     if not convention.strip():
         raise AdapterError("market margin convention must be explicit")
-    records, _ = _standard_records(
+    records, _, warnings = _standard_records(
         payload, dataset_type="market_margin", unit=unit
     )
     return {
@@ -441,6 +629,7 @@ def adapt_market_margin_history(
         ],
         "unit": "CNY",
         "convention": convention,
+        "warnings": warnings,
     }
 
 
@@ -450,6 +639,21 @@ def adapt_mcp_data(
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Dispatch a raw MCP payload to the requested Engine dataset contract."""
+
+    original_payload = payload
+    payload = expand_choice_tables(payload)
+    if (
+        isinstance(original_payload, Mapping)
+        and isinstance(original_payload.get("data"), list)
+    ):
+        payload = {
+            "rows": payload,
+            **{
+                key: value
+                for key, value in original_payload.items()
+                if key != "data"
+            },
+        }
 
     normalized = str(dataset_type).strip().lower()
     adapters = {
