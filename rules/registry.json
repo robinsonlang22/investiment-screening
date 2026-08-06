@@ -20,15 +20,6 @@
       "enabled": true,
       "required": true,
       "hard_vetoes": ["clock_4"]
-    },
-    {
-      "id": "F1",
-      "category": "capital_flow",
-      "name": "融资余额稳定原则",
-      "file": "f1.json",
-      "enabled": true,
-      "required": true,
-      "hard_vetoes": ["single_day_outflow", "three_day_outflow"]
     }
   ],
   "rule_result_values": [
@@ -65,16 +56,7 @@
         "when": "all_hard_and_required_conditions_passed_with_sufficient_evidence",
         "result": "COMPLIANT"
       }
-    ],
-    "manual_override": {
-      "id": "F1_SYSTEMIC_DELEVERAGING_REVIEW",
-      "applies_to_rule": "F1",
-      "from": "fail",
-      "maximum_rule_result": "conditional_pass",
-      "maximum_overall_result": "CONDITIONAL",
-      "automatic_override_allowed": false,
-      "cannot_override": ["P1", "P2", "other_hard_vetoes"]
-    }
+    ]
   },
   "unset_constraints": {
     "fundamental_rules_from": "P3",

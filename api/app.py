@@ -1,4 +1,4 @@
-"""Single-endpoint deterministic investment rule engine."""
+"""Versioned deterministic investment-rule API."""
 
 from __future__ import annotations
 
@@ -6,19 +6,13 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from engine.adapter import AdapterError, adapt_mcp_data
-from engine.aggregator import (
-    build_evaluation_bundle,
-    validate_evaluation_completeness,
-)
-from engine.f1_evaluator import evaluate_f1
-from engine.margin_features import build_f1_features
+from engine.aggregator import build_evaluation_bundle, validate_evaluation_completeness
 from engine.p1_evaluator import evaluate_p1
 from engine.p2_evaluator import evaluate_p2
 from engine.price_features import (
@@ -29,22 +23,16 @@ from engine.price_features import (
     latest_moving_averages,
     moving_average,
 )
-from engine.validators import (
-    validate_margin_history,
-    validate_market_cap,
-    validate_market_margin_history,
-    validate_price_history,
-)
+from engine.validators import validate_price_history
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = PROJECT_ROOT / "rules"
-REQUIRED_RULES = ("P1", "P2", "F1")
 
 app = FastAPI(
     title="Investment Rule Engine",
-    version="2.0.0",
-    description="Parse available market data and immediately evaluate P1/P2/F1.",
+    version="3.0.0",
+    description="Evaluate P1, P2, or the complete P1/P2 rule set.",
 )
 
 
@@ -52,18 +40,23 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RawData(StrictModel):
-    price_history: Any | None = None
-    margin_history: Any | None = None
-    market_cap: Any | None = None
-    market_margin_history: Any | None = None
+class PricePoint(StrictModel):
+    date: str
+    close: float = Field(gt=0)
 
 
 class EvaluateRequest(StrictModel):
-    symbol: str
-    raw_data: RawData
-    adapter_options: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    symbol: str = Field(min_length=1)
+    price_history: list[PricePoint] = Field(min_length=1)
     spread_expanding: bool | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("symbol must not be blank")
+        return normalized
 
 
 @lru_cache(maxsize=4)
@@ -78,11 +71,6 @@ def _rule(rule_id: str) -> dict[str, Any]:
 def _rule_version() -> str:
     registry = _load_json("registry.json")
     return str(registry.get("rule_version", registry.get("schema_version", "unknown")))
-
-
-def _options(request: EvaluateRequest, dataset: str) -> dict[str, Any]:
-    value = request.adapter_options.get(dataset, {})
-    return value if isinstance(value, dict) else {}
 
 
 def _build_price_features(price_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -108,117 +96,89 @@ def _build_price_features(price_rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _parse_raw_data(request: EvaluateRequest) -> dict[str, Any]:
-    """Adapt and minimally validate each independent rule input."""
-
-    parsed: dict[str, Any] = {
-        "price_rows": None,
-        "margin_rows": None,
-        "free_float_market_cap": None,
-        "market_margin_rows": None,
-    }
-    diagnostics: dict[str, Any] = {
-        "adapter_errors": {},
-        "validation_issues": {},
-        "adapter_warnings": {},
-    }
-
-    def parse_dataset(
-        name: str,
-        payload: Any,
-        validator: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> dict[str, Any] | None:
-        if payload is None:
-            return None
-        try:
-            adapted = adapt_mcp_data(
-                payload,
-                name,
-                **_options(request, name),
-            )
-            if adapted.get("warnings"):
-                diagnostics["adapter_warnings"][name] = adapted["warnings"]
-            validation = validator(adapted)
-            if validation["status"] != "VALID":
-                diagnostics["validation_issues"][name] = validation.get(
-                    "issues", []
-                )
-                return None
-            return validation
-        except (AdapterError, ValueError) as exc:
-            diagnostics["adapter_errors"][name] = str(exc)
-            return None
-
-    price = parse_dataset(
-        "price_history",
-        request.raw_data.price_history,
-        lambda adapted: validate_price_history(
-            adapted,
-            minimum_observations=120,
-            required_adjustment="forward",
-        ),
+def _prepare_price_features(
+    request: EvaluateRequest,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    rows = [point.model_dump() for point in request.price_history]
+    validation = validate_price_history(
+        {"rows": rows},
+        minimum_observations=120,
     )
-    if price:
-        parsed["price_rows"] = price["valid_rows"]
-
-    margin = parse_dataset(
-        "margin_history",
-        request.raw_data.margin_history,
-        lambda adapted: validate_margin_history(
-            adapted,
-            minimum_observations=21,
-        ),
-    )
-    if margin:
-        parsed["margin_rows"] = margin["valid_rows"]
-
-    if parsed["margin_rows"] and request.raw_data.market_cap is not None:
-        target_date = parsed["margin_rows"][-1]["date"]
-        market_cap = parse_dataset(
-            "market_cap",
-            request.raw_data.market_cap,
-            lambda adapted: validate_market_cap(adapted, target_date),
+    if validation["status"] != "VALID":
+        raise ValueError(
+            f"price_history validation failed: {validation.get('issues', [])}"
         )
-        if market_cap and market_cap.get("selected_row"):
-            parsed["free_float_market_cap"] = market_cap["selected_row"][
-                "free_float_market_cap"
-            ]
-
-    market_margin = parse_dataset(
-        "market_margin_history",
-        request.raw_data.market_margin_history,
-        validate_market_margin_history,
-    )
-    if market_margin:
-        parsed["market_margin_rows"] = market_margin["valid_rows"]
-
-    unavailable = []
-    if parsed["price_rows"] is None:
-        unavailable.append("price_history")
-    if parsed["margin_rows"] is None:
-        unavailable.append("margin_history")
-    if parsed["free_float_market_cap"] is None:
-        unavailable.append("free_float_market_cap")
-    if parsed["market_margin_rows"] is None:
-        unavailable.append("market_margin_history")
-    diagnostics["unavailable_inputs"] = unavailable
-    diagnostics["status"] = "VALID" if not unavailable else "PARTIAL"
-    return {**parsed, "diagnostics": diagnostics}
+    data_quality = {
+        "status": "VALID",
+        "validation_issues": {},
+        "unavailable_inputs": [],
+        "price_history": {
+            "observations": len(validation["valid_rows"]),
+            "latest_date": validation.get("latest_date"),
+        },
+    }
+    return _build_price_features(validation["valid_rows"]), data_quality
 
 
-def _insufficient_rule(
-    rule_id: str,
-    missing_inputs: list[str],
-) -> dict[str, Any]:
+def _decision(overall_status: str) -> str:
     return {
-        "rule_id": rule_id,
-        "required": True,
-        "status": "INSUFFICIENT_INFORMATION",
-        "hard_veto": False,
-        "checks": [],
-        "derived_metrics": {},
-        "missing_inputs": missing_inputs,
-        "reasons": ["缺少可安全计算该原则的数据；其他原则已继续计算"],
+        "COMPLIANT": "pass",
+        "CONDITIONAL": "conditional_pass",
+        "NOT_COMPLIANT": "fail",
+        "INFORMATION_INSUFFICIENT": "information_insufficient",
+    }[overall_status]
+
+
+def _evaluate(
+    request: EvaluateRequest,
+    analysis_type: Literal["p1", "p2", "full"],
+) -> dict[str, Any]:
+    features, data_quality = _prepare_price_features(request)
+
+    # P2's three-o'clock classification depends on P1's market state, so P1 is
+    # always calculated internally for P2 while remaining hidden in /p2 output.
+    p1 = evaluate_p1(
+        features,
+        spread_expanding=request.spread_expanding,
+        rule_config=_rule("P1"),
+    )
+    p2 = None
+    if analysis_type in {"p2", "full"}:
+        p2 = evaluate_p2(features, p1, _rule("P2"))
+
+    if analysis_type == "p1":
+        results = {"p1": p1}
+    elif analysis_type == "p2":
+        assert p2 is not None
+        results = {"p2": p2}
+    else:
+        assert p2 is not None
+        results = {"p1": p1, "p2": p2}
+
+    applicable_rules = [rule_id.upper() for rule_id in results]
+    completeness = validate_evaluation_completeness(
+        applicable_rules,
+        list(results.values()),
+    )
+    if not completeness["complete"]:
+        raise ValueError(f"internal evaluation incomplete: {completeness}")
+
+    data_quality["evaluation_completeness"] = completeness
+    bundle = build_evaluation_bundle(
+        request.symbol,
+        list(results.values()),
+        data_quality,
+    )
+    return {
+        "symbol": request.symbol,
+        "analysis_type": analysis_type,
+        "decision": _decision(bundle["overall_status"]),
+        "overall_status": bundle["overall_status"],
+        "rule_version": _rule_version(),
+        "results": results,
+        "data_quality": bundle["data_quality"],
+        "human_review": bundle["human_review"],
+        "report_constraints": bundle["report_constraints"],
     }
 
 
@@ -235,67 +195,16 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "service": "investment-rule-engine"}
 
 
-@app.post("/evaluate")
-async def evaluate(request: EvaluateRequest) -> dict[str, Any]:
-    """Parse raw data and calculate every principle that has enough input."""
+@app.post("/v1/evaluate/p1")
+async def evaluate_p1_endpoint(request: EvaluateRequest) -> dict[str, Any]:
+    return _evaluate(request, "p1")
 
-    data = _parse_raw_data(request)
 
-    if data["price_rows"] is not None:
-        price_features = _build_price_features(data["price_rows"])
-        p1 = evaluate_p1(
-            price_features,
-            spread_expanding=request.spread_expanding,
-            rule_config=_rule("P1"),
-        )
-        p2 = evaluate_p2(price_features, p1, _rule("P2"))
-    else:
-        p1 = _insufficient_rule("P1", ["price_history"])
-        p2 = _insufficient_rule("P2", ["price_history"])
+@app.post("/v1/evaluate/p2")
+async def evaluate_p2_endpoint(request: EvaluateRequest) -> dict[str, Any]:
+    return _evaluate(request, "p2")
 
-    if (
-        data["margin_rows"] is not None
-        and data["free_float_market_cap"] is not None
-    ):
-        margin_features = build_f1_features(
-            data["margin_rows"],
-            data["free_float_market_cap"],
-            data["market_margin_rows"],
-        )
-        f1 = evaluate_f1(margin_features, _rule("F1"))
-    else:
-        missing_f1_inputs = []
-        if data["margin_rows"] is None:
-            missing_f1_inputs.append("margin_history")
-        if data["free_float_market_cap"] is None:
-            missing_f1_inputs.append("free_float_market_cap")
-        f1 = _insufficient_rule("F1", missing_f1_inputs)
 
-    rule_results = [p1, p2, f1]
-    completeness = validate_evaluation_completeness(REQUIRED_RULES, rule_results)
-    if not completeness["complete"]:
-        raise ValueError(f"internal evaluation incomplete: {completeness}")
-
-    data_quality = data["diagnostics"]
-    data_quality["evaluation_completeness"] = completeness
-    bundle = build_evaluation_bundle(
-        request.symbol,
-        rule_results,
-        data_quality,
-    )
-    decision_mapping = {
-        "COMPLIANT": "pass",
-        "CONDITIONAL": "conditional_pass",
-        "NOT_COMPLIANT": "fail",
-        "INFORMATION_INSUFFICIENT": "information_insufficient",
-    }
-    return {
-        "symbol": request.symbol,
-        "decision": decision_mapping[bundle["overall_status"]],
-        "overall_status": bundle["overall_status"],
-        "rule_version": _rule_version(),
-        "results": {"p1": p1, "p2": p2, "f1": f1},
-        "data_quality": bundle["data_quality"],
-        "human_review": bundle["human_review"],
-        "report_constraints": bundle["report_constraints"],
-    }
+@app.post("/v1/evaluate/full")
+async def evaluate_full_endpoint(request: EvaluateRequest) -> dict[str, Any]:
+    return _evaluate(request, "full")

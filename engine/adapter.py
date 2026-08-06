@@ -40,40 +40,11 @@ _UNIT_KEYS = ("unit", "currency", "单位", "币种", "_original_unit")
 _WRAPPER_KEYS = ("rows", "data", "records", "results", "items", "values")
 
 _VALUE_ALIASES = {
-    "price": ("close", "close_price", "收盘价", "前复权收盘价"),
-    "margin": ("margin_balance", "financing_balance", "融资余额"),
-    "market_cap": (
-        "free_float_market_cap",
-        "free_float_cap",
-        "ffmc",
-        "自由流通市值",
-    ),
-    "market_margin": (
-        "market_margin_balance",
-        "total_margin_balance",
-        "两市融资融券余额",
-        "全市场两融余额",
-    ),
+    "price": ("close", "close_price", "收盘价"),
 }
 
 _METRIC_ALIASES = {
-    "price": {"close", "close_price", "收盘价", "前复权收盘价"},
-    "margin": {"margin_balance", "financing_balance", "融资余额"},
-    "market_cap": {
-        "free_float_market_cap",
-        "free_float_cap",
-        "ffmc",
-        "自由流通市值",
-    },
-    "market_margin": {
-        "market_margin_balance",
-        "total_margin_balance",
-        "两市融资融券余额",
-        "全市场两融余额",
-        "融资余额(合计)",
-        "融资余额（合计）",
-        "全部a股市场融资余额合计",
-    },
+    "price": {"close", "close_price", "收盘价"},
 }
 
 # Fields commonly returned alongside the requested metric.  Their presence
@@ -96,9 +67,6 @@ _KNOWN_OTHER_VALUE_ALIASES = {
         "区间涨跌幅",
         "涨跌幅",
     },
-    "margin": set(),
-    "market_cap": set(),
-    "market_margin": set(),
 }
 
 _UNIT_FACTORS = {
@@ -478,7 +446,6 @@ def _metadata_date(
 def adapt_price_history(
     payload: Any,
     *,
-    adjustment: str | None = None,
     latest_closed_date: Any = None,
 ) -> dict[str, Any]:
     """Adapt an MCP price table to ``validate_price_history`` input."""
@@ -486,37 +453,15 @@ def adapt_price_history(
     records, metadata, warnings = _standard_records(
         payload, dataset_type="price", unit="CNY"
     )
-    source_adjustment = (
-        adjustment
-        or metadata.get("adjustment")
-        or metadata.get("adjustment_type")
-        or metadata.get("复权方式")
-    )
-    adjustment_aliases = {
-        "forward": "forward",
-        "forward_adjusted": "forward",
-        "qfq": "forward",
-        "前复权": "forward",
-    }
-    normalized_adjustment = adjustment_aliases.get(
-        str(source_adjustment).strip().lower()
-        if source_adjustment is not None
-        else ""
-    )
-    if normalized_adjustment is None:
-        raise AdapterError("price adjustment must be explicitly forward/前复权")
-
     rows = [
         {
             "date": record["date"],
             "close": record["value"],
-            "adjustment": normalized_adjustment,
         }
         for record in records
     ]
     result: dict[str, Any] = {
         "rows": rows,
-        "adjustment": normalized_adjustment,
         "warnings": warnings,
     }
     as_of = _metadata_date(
@@ -529,85 +474,6 @@ def adapt_price_history(
     if as_of is not None:
         result["latest_closed_date"] = as_of
     return result
-
-
-def adapt_margin_history(
-    payload: Any,
-    *,
-    unit: str | None = None,
-) -> dict[str, Any]:
-    """Adapt security financing balances, converting all values to CNY."""
-
-    records, _, warnings = _standard_records(
-        payload, dataset_type="margin", unit=unit
-    )
-    return {
-        "rows": [
-            {
-                "date": record["date"],
-                "margin_balance": record["value"],
-                "unit": "CNY",
-                "metric": "margin_balance",
-            }
-            for record in records
-        ],
-        "unit": "CNY",
-        "metric": "margin_balance",
-        "warnings": warnings,
-    }
-
-
-def adapt_market_cap(
-    payload: Any,
-    *,
-    unit: str | None = None,
-) -> dict[str, Any]:
-    """Adapt free-float market-cap observations to CNY."""
-
-    records, _, warnings = _standard_records(
-        payload, dataset_type="market_cap", unit=unit
-    )
-    return {
-        "rows": [
-            {
-                "date": record["date"],
-                "free_float_market_cap": record["value"],
-                "unit": "CNY",
-            }
-            for record in records
-        ],
-        "unit": "CNY",
-        "warnings": warnings,
-    }
-
-
-def adapt_market_margin_history(
-    payload: Any,
-    *,
-    unit: str | None = None,
-    convention: str = "沪深两市融资融券余额合计",
-) -> dict[str, Any]:
-    """Adapt market-wide margin balances to the manual-review input."""
-
-    if not convention.strip():
-        raise AdapterError("market margin convention must be explicit")
-    records, _, warnings = _standard_records(
-        payload, dataset_type="market_margin", unit=unit
-    )
-    return {
-        "rows": [
-            {
-                "date": record["date"],
-                "market_margin_balance": record["value"],
-                "unit": "CNY",
-                "convention": convention,
-            }
-            for record in records
-        ],
-        "unit": "CNY",
-        "convention": convention,
-        "warnings": warnings,
-    }
 
 
 def adapt_mcp_data(
@@ -636,12 +502,6 @@ def adapt_mcp_data(
     adapters = {
         "price": adapt_price_history,
         "price_history": adapt_price_history,
-        "margin": adapt_margin_history,
-        "margin_history": adapt_margin_history,
-        "market_cap": adapt_market_cap,
-        "free_float_market_cap": adapt_market_cap,
-        "market_margin": adapt_market_margin_history,
-        "market_margin_history": adapt_market_margin_history,
     }
     adapter = adapters.get(normalized)
     if adapter is None:

@@ -131,40 +131,6 @@ def validate_evaluation_completeness(
     }
 
 
-def _f1_exception_used(result: Mapping[str, Any]) -> bool:
-    if str(result.get("rule_id", "")).upper() != "F1":
-        return False
-    if result.get("manual_override_applied") is True:
-        return True
-    review = result.get("human_review")
-    return (
-        isinstance(review, Mapping)
-        and review.get("completed") is True
-        and review.get("confirmed_passive_adjustment") is True
-    )
-
-
-def enforce_exception_cap(
-    rule_results: Sequence[Mapping[str, Any]],
-    overall_status: str,
-) -> str:
-    """Cap an F1 human-exception outcome at CONDITIONAL."""
-
-    results = _as_results(rule_results)
-    allowed = {
-        COMPLIANT,
-        CONDITIONAL,
-        NOT_COMPLIANT,
-        INFORMATION_INSUFFICIENT,
-    }
-    if overall_status not in allowed:
-        raise ValueError(f"unsupported overall_status: {overall_status!r}")
-    if any(_f1_exception_used(result) for result in results):
-        if overall_status == COMPLIANT:
-            return CONDITIONAL
-    return overall_status
-
-
 def _collect_human_review(
     rule_results: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -200,7 +166,6 @@ def build_evaluation_bundle(
 
     results = _as_results(rule_results)
     overall_status = aggregate_rule_results(results)
-    overall_status = enforce_exception_cap(results, overall_status)
     return {
         "symbol": symbol.strip(),
         "overall_status": overall_status,

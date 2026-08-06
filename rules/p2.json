@@ -6,13 +6,12 @@
   "scope": "使用日K线审核买入机会的上市股票",
   "rule_type": "buy_required",
   "data": {
-    "price_adjustment": "forward_adjusted",
     "frequency": "daily",
     "price_field": "close",
     "as_of": "审核日最近一个已收盘交易日",
     "main_window_trading_days": 30,
     "short_window_trading_days": 10,
-    "preferred_source": "东方财富前复权日K收盘价"
+    "preferred_source": "东方财富日K收盘价"
   },
   "regression": {
     "model": "ln(close_i) = a + b * i + epsilon_i",

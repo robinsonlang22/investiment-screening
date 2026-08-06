@@ -9,34 +9,11 @@ from tests.helpers import trading_dates
 class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
-        cls.price_dates = trading_dates(120)
-        cls.margin_dates = cls.price_dates[-21:]
-        cls.raw_data = {
-            "price_history": {
-                "rows": [
-                    {"日期": day, "收盘价": 100 * 1.002**index}
-                    for index, day in enumerate(cls.price_dates)
-                ],
-                "复权方式": "前复权",
-                "latest_closed_date": cls.price_dates[-1],
-            },
-            "margin_history": {
-                "rows": [
-                    {"日期": day, "融资余额": 1.0 * 1.0001**index}
-                    for index, day in enumerate(cls.margin_dates)
-                ],
-                "单位": "亿元",
-            },
-            "market_cap": {
-                "rows": [
-                    {
-                        "日期": cls.margin_dates[-1],
-                        "自由流通市值": 20,
-                    }
-                ],
-                "单位": "亿元",
-            },
-        }
+        dates = trading_dates(120)
+        cls.price_history = [
+            {"date": day, "close": 100 * 1.002**index}
+            for index, day in enumerate(dates)
+        ]
 
     async def asyncSetUp(self):
         self.client = httpx.AsyncClient(
@@ -47,82 +24,86 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
 
-    async def test_only_evaluate_endpoint_remains(self):
-        self.assertEqual((await self.client.get("/health")).status_code, 200)
-        schema = (await self.client.get("/openapi.json")).json()
-        processing_paths = {
-            path for path in schema["paths"] if path != "/health"
+    def request_body(self, **overrides):
+        return {
+            "symbol": "301536.sz",
+            "price_history": self.price_history,
+            "spread_expanding": True,
+            **overrides,
         }
-        self.assertEqual(processing_paths, {"/evaluate"})
 
-    async def test_raw_data_evaluates_end_to_end(self):
-        response = await self.client.post(
-            "/evaluate",
-            json={
-                "symbol": "301536.SZ",
-                "raw_data": self.raw_data,
-                "spread_expanding": True,
+    async def test_versioned_evaluation_routes(self):
+        schema = (await self.client.get("/openapi.json")).json()
+        processing_paths = {path for path in schema["paths"] if path != "/health"}
+        self.assertEqual(
+            processing_paths,
+            {
+                "/v1/evaluate/p1",
+                "/v1/evaluate/p2",
+                "/v1/evaluate/full",
             },
         )
-        self.assertEqual(response.status_code, 200)
-        evaluated = response.json()
-        self.assertEqual(evaluated["decision"], "pass")
-        self.assertEqual(evaluated["overall_status"], "COMPLIANT")
-        self.assertEqual(evaluated["rule_version"], "2026-07-01")
-        self.assertEqual(set(evaluated["results"]), {"p1", "p2", "f1"})
-        self.assertFalse(evaluated["report_constraints"]["may_recalculate"])
-        self.assertFalse(evaluated["report_constraints"]["may_override_status"])
+        self.assertEqual((await self.client.post("/evaluate")).status_code, 404)
 
-    async def test_empty_raw_data_degrades_all_rules(self):
+    async def test_p1_returns_only_p1(self):
         response = await self.client.post(
-            "/evaluate",
-            json={"symbol": "301536.SZ", "raw_data": {}},
+            "/v1/evaluate/p1",
+            json=self.request_body(),
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["decision"], "information_insufficient")
-        self.assertEqual(
-            {result["status"] for result in body["results"].values()},
-            {"INSUFFICIENT_INFORMATION"},
-        )
+        self.assertEqual(body["symbol"], "301536.SZ")
+        self.assertEqual(body["analysis_type"], "p1")
+        self.assertEqual(set(body["results"]), {"p1"})
+        self.assertEqual(body["data_quality"]["price_history"]["observations"], 120)
 
-    async def test_price_only_calculates_p1_p2(self):
+    async def test_p2_returns_only_p2(self):
         response = await self.client.post(
-            "/evaluate",
-            json={
-                "symbol": "301536.SZ",
-                "raw_data": {
-                    "price_history": self.raw_data["price_history"],
-                },
-            },
+            "/v1/evaluate/p2",
+            json=self.request_body(),
         )
         self.assertEqual(response.status_code, 200)
-        evaluated = response.json()
-        self.assertNotIn("missing_inputs", evaluated["results"]["p1"])
-        self.assertNotIn("missing_inputs", evaluated["results"]["p2"])
-        self.assertEqual(
-            evaluated["results"]["f1"]["missing_inputs"],
-            ["margin_history", "free_float_market_cap"],
-        )
+        body = response.json()
+        self.assertEqual(body["analysis_type"], "p2")
+        self.assertEqual(set(body["results"]), {"p2"})
 
-    async def test_bad_margin_does_not_block_price_rules(self):
+    async def test_full_returns_and_aggregates_both_rules(self):
         response = await self.client.post(
-            "/evaluate",
-            json={
-                "symbol": "301536.SZ",
-                "raw_data": {
-                    "price_history": self.raw_data["price_history"],
-                    "margin_history": [{"说明": "无日期"}],
-                },
-            },
+            "/v1/evaluate/full",
+            json=self.request_body(),
         )
         self.assertEqual(response.status_code, 200)
-        evaluated = response.json()
-        self.assertNotIn("missing_inputs", evaluated["results"]["p1"])
-        self.assertIn(
-            "margin_history",
-            evaluated["data_quality"]["adapter_errors"],
+        body = response.json()
+        self.assertEqual(body["analysis_type"], "full")
+        self.assertEqual(set(body["results"]), {"p1", "p2"})
+        self.assertEqual(
+            body["data_quality"]["evaluation_completeness"]["completed_rules"],
+            ["P1", "P2"],
         )
+
+    async def test_short_history_is_rejected(self):
+        response = await self.client.post(
+            "/v1/evaluate/p1",
+            json=self.request_body(price_history=self.price_history[:119]),
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"], "INVALID_ENGINE_INPUT")
+
+    async def test_extra_fields_are_rejected(self):
+        response = await self.client.post(
+            "/v1/evaluate/p1",
+            json=self.request_body(analysis_type="p1"),
+        )
+        self.assertEqual(response.status_code, 422)
+
+    async def test_invalid_price_point_is_rejected(self):
+        invalid = [*self.price_history]
+        invalid[-1] = {"date": invalid[-1]["date"], "close": 0}
+        response = await self.client.post(
+            "/v1/evaluate/p1",
+            json=self.request_body(price_history=invalid),
+        )
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

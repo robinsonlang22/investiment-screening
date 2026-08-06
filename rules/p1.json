@@ -6,14 +6,13 @@
   "scope": "使用日K线审核的上市股票",
   "rule_type": "required_with_preferences",
   "data": {
-    "price_adjustment": "forward_adjusted",
     "frequency": "daily",
     "price_field": "close",
     "as_of": "审核日最近一个已收盘交易日",
     "intraday_final_judgement_allowed": false,
     "minimum_history_requirement": "足以计算最近连续120个交易日的全部均线",
     "moving_average_periods": [5, 10, 20, 60],
-    "preferred_source": "东方财富前复权日K收盘价"
+    "preferred_source": "东方财富日K收盘价"
   },
   "metrics": {
     "MA5": "SMA(close, 5)",
@@ -123,7 +122,7 @@
   ],
   "insufficient_information_conditions": [
     "历史数据不足以计算要求的均线与连续状态",
-    "复权方式或计算周期无法核对",
+    "计算周期无法核对",
     "无法确定均线间距是否扩大"
   ],
   "required_disclosures": [

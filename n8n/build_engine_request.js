@@ -94,42 +94,90 @@ function convertSheets(value, keywords = []) {
   return convertedRows;
 }
 
-const priceHistory = convertSheets(
-  source.price_history,
-  ['收盘价']
-);
+function normalizeDate(value) {
+  const text = String(value ?? '').trim();
+  if (/^\d{8}$/.test(text)) {
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+  }
+  return text
+    .replace(/年/g, '-')
+    .replace(/月/g, '-')
+    .replace(/日/g, '')
+    .replace(/[/.]/g, '-');
+}
 
-const marginHistory = convertSheets(
-  source.margin_history,
-  ['融资余额']
-);
+function isDateKey(value) {
+  return /^\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?$/.test(value) ||
+    /^\d{8}$/.test(value);
+}
 
-const marketCap = convertSheets(
-  source.market_cap,
-  ['自由流通市值']
-);
+function toPricePoints(value) {
+  const points = [];
 
-const marketMarginHistory = convertSheets(
-  source.market_margin_history,
-  ['融资余额', '融资余额(合计)']
-);
+  if (Array.isArray(value?.observations)) {
+    for (const observation of value.observations) {
+      if (Array.isArray(observation) && observation.length >= 2) {
+        points.push({
+          date: normalizeDate(observation[0]),
+          close: Number(observation[1])
+        });
+      }
+    }
+  }
+
+  const directRows = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.rows)
+      ? value.rows
+      : [];
+  for (const row of directRows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const date = row.date ?? row.trade_date ?? row['日期'] ?? row['交易日期'];
+    const close = row.close ?? row.close_price ?? row['收盘价'];
+    if (date != null && close != null) {
+      points.push({date: normalizeDate(date), close: Number(close)});
+    }
+  }
+
+  const rows = convertSheets(value, ['收盘价']);
+  for (const row of rows) {
+    const directDate = row.date ?? row.trade_date ?? row['日期'] ?? row['交易日期'];
+    const directClose = row.close ?? row.close_price ?? row['收盘价'];
+    if (directDate != null && directClose != null) {
+      points.push({date: normalizeDate(directDate), close: Number(directClose)});
+      continue;
+    }
+
+    for (const [key, cell] of Object.entries(row)) {
+      if (isDateKey(key)) {
+        points.push({date: normalizeDate(key), close: Number(cell)});
+      }
+    }
+  }
+
+  const unique = new Map();
+  for (const point of points) {
+    if (point.date && Number.isFinite(point.close)) {
+      unique.set(point.date, point);
+    }
+  }
+  return [...unique.values()].sort((left, right) =>
+    left.date.localeCompare(right.date)
+  );
+}
+
+const priceHistory = toPricePoints(source.price_history);
+const analysisType = String($json.analysis_type ?? 'p1').trim().toLowerCase();
 
 return {
   json: {
     symbol: $json.symbol,
+    analysis_type: analysisType,
     raw_data: {
-      price_history: priceHistory,
-      margin_history: marginHistory,
-      market_cap: marketCap,
-      market_margin_history: marketMarginHistory
-    },
-    // The research request is explicitly for forward-adjusted daily prices.
-    // Preserve that contract when the MCP table itself omits adjustment
-    // metadata instead of forcing the Python adapter to guess from values.
-    adapter_options: {
       price_history: {
-        adjustment: 'forward'
+        observations: priceHistory.map(point => [point.date, point.close])
       }
-    }
+    },
+    normalized_price_history: priceHistory
   }
 };
