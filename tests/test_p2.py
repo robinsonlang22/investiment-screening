@@ -50,6 +50,11 @@ class P2EvaluatorTests(unittest.TestCase):
                     classify_clock_direction(g30, r2, self.config), expected
                 )
 
+    def test_evaluation_includes_chinese_direction_name(self):
+        result = evaluate_p2(self.base, {"market_state": "DENSE"}, self.config)
+        self.assertEqual(result["clock"], 2)
+        self.assertEqual(result["direction_name"], "稳步上升")
+
     def test_short_term_can_be_accelerating_and_unstable(self):
         result = classify_short_term_state(0.6, -0.2, 0.5, 0.3)
         self.assertEqual(result["state"], "ACCELERATING")
@@ -124,12 +129,9 @@ class P2EvaluatorTests(unittest.TestCase):
                 "e30_daily_pct": -0.1,
             },
         }
-        self.assertEqual(
-            evaluate_p2(features, {"market_state": "DENSE"}, self.config)[
-                "status"
-            ],
-            INSUFFICIENT_INFORMATION,
-        )
+        result = evaluate_p2(features, {"market_state": "DENSE"}, self.config)
+        self.assertEqual(result["status"], INSUFFICIENT_INFORMATION)
+        self.assertIsNone(result["direction_name"])
 
 
 if __name__ == "__main__":

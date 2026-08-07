@@ -12,6 +12,14 @@ CONDITIONAL_PASS = "CONDITIONAL_PASS"
 FAIL = "FAIL"
 INSUFFICIENT_INFORMATION = "INSUFFICIENT_INFORMATION"
 
+CLOCK_DIRECTION_NAMES = {
+    1: "快速上升",
+    2: "稳步上升",
+    3: "横盘/震荡",
+    4: "缓慢下降",
+    5: "快速下降",
+}
+
 
 def _number(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
@@ -390,6 +398,7 @@ def evaluate_p2(
             "rule_id": "P2",
             "status": INSUFFICIENT_INFORMATION,
             "clock": None,
+            "direction_name": None,
             "short_term_state": short_state,
             "checks": [],
             "metrics": metrics,
@@ -405,6 +414,7 @@ def evaluate_p2(
             "rule_id": "P2",
             "status": INSUFFICIENT_INFORMATION,
             "clock": None,
+            "direction_name": None,
             "short_term_state": short_state,
             "checks": [
                 {
@@ -472,6 +482,7 @@ def evaluate_p2(
         "rule_id": "P2",
         "status": evaluation["status"],
         "clock": clock,
+        "direction_name": CLOCK_DIRECTION_NAMES.get(clock),
         "short_term_state": short_state,
         "checks": evaluation.get("checks", []),
         "metrics": metrics,

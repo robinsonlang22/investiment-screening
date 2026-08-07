@@ -65,6 +65,7 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assertEqual(body["analysis_type"], "p2")
         self.assertEqual(set(body["results"]), {"p2"})
+        self.assertEqual(body["results"]["p2"]["direction_name"], "稳步上升")
 
     async def test_full_returns_and_aggregates_both_rules(self):
         response = await self.client.post(
