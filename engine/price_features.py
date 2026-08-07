@@ -95,26 +95,24 @@ def calculate_ma_slope(
 
 
 def calculate_ma_density(
-    close: float,
     ma5: float,
     ma10: float,
     ma20: float,
-    ma60: float,
-) -> float:
-    """Calculate MA density as a percentage of the same-day close."""
+) -> dict[str, float]:
+    """Calculate the P1 core-MA mean, range and relative range.
 
-    close_number, *averages = _validated_values(
-        [close, ma5, ma10, ma20, ma60], name="density_inputs"
-    )
-    return (max(averages) - min(averages)) / close_number * 100.0
+    P1 density deliberately excludes MA60.  The denominator is the average
+    cost represented by MA5/MA10/MA20, not the same-day close.
+    """
 
-
-def _close_value(row: Any, index: int) -> float:
-    if isinstance(row, Mapping):
-        if "close" not in row:
-            raise ValueError(f"close_rows[{index}] is missing 'close'")
-        return _validated_values([row["close"]], name=f"close_rows[{index}]")[0]
-    return _validated_values([row], name=f"close_rows[{index}]")[0]
+    averages = _validated_values([ma5, ma10, ma20], name="density_inputs")
+    mean = sum(averages) / len(averages)
+    value_range = max(averages) - min(averages)
+    return {
+        "mean": mean,
+        "range": value_range,
+        "relative_range_pct": value_range / mean * 100.0,
+    }
 
 
 def _ma_series_for_window(
@@ -129,29 +127,28 @@ def _ma_series_for_window(
 def calculate_density_series(
     close_rows: Sequence[Any],
     ma_series: Mapping[Any, Sequence[float | None]],
-) -> list[float | None]:
-    """Return the aligned MA-density series for MA5/10/20/60.
+) -> list[dict[str, float] | None]:
+    """Return the aligned P1 density series for MA5/10/20.
 
-    ``close_rows`` may contain close numbers or validated mappings with a
-    ``close`` key. ``ma_series`` accepts keys such as ``ma5`` or ``5``.
+    ``close_rows`` establishes output alignment. ``ma_series`` accepts keys
+    such as ``ma5`` or ``5``.
     """
 
     series_by_window = {
         window: _ma_series_for_window(ma_series, window)
-        for window in (5, 10, 20, 60)
+        for window in (5, 10, 20)
     }
     length = len(close_rows)
     if any(len(series) != length for series in series_by_window.values()):
         raise ValueError("close_rows and every MA series must have equal lengths")
 
-    result: list[float | None] = []
-    for index, row in enumerate(close_rows):
-        averages = [series_by_window[window][index] for window in (5, 10, 20, 60)]
+    result: list[dict[str, float] | None] = []
+    for index, _row in enumerate(close_rows):
+        averages = [series_by_window[window][index] for window in (5, 10, 20)]
         if any(value is None for value in averages):
             result.append(None)
             continue
-        close = _close_value(row, index)
-        result.append(calculate_ma_density(close, *averages))  # type: ignore[arg-type]
+        result.append(calculate_ma_density(*averages))  # type: ignore[arg-type]
     return result
 
 

@@ -178,6 +178,10 @@ return {
         observations: priceHistory.map(point => [point.date, point.close])
       }
     },
-    normalized_price_history: priceHistory
+    normalized_price_history: priceHistory,
+    engine_request: {
+      symbol: $json.symbol,
+      price_history: priceHistory
+    }
   }
 };

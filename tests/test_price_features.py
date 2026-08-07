@@ -28,7 +28,10 @@ class PriceFeatureTests(unittest.TestCase):
         self.assertTrue(
             isclose(calculate_ma_slope([100.0] * 10 + [110.0]), 1.0)
         )
-        self.assertTrue(isclose(calculate_ma_density(100, 99, 100, 101, 102), 3))
+        density = calculate_ma_density(99, 100, 101)
+        self.assertTrue(isclose(density["mean"], 100))
+        self.assertTrue(isclose(density["range"], 2))
+        self.assertTrue(isclose(density["relative_range_pct"], 2))
     def test_log_regression_and_rolling_alignment(self):
         closes = [100 * 1.01**index for index in range(40)]
         regression = calculate_log_regression(closes[-30:])
@@ -44,8 +47,11 @@ class PriceFeatureTests(unittest.TestCase):
         closes = [100.0] * 60
         series = {window: moving_average(closes, window) for window in (5, 10, 20, 60)}
         result = calculate_density_series(closes, series)
-        self.assertEqual(result[:59], [None] * 59)
-        self.assertEqual(result[-1], 0)
+        self.assertEqual(result[:19], [None] * 19)
+        self.assertEqual(
+            result[-1],
+            {"mean": 100.0, "range": 0.0, "relative_range_pct": 0.0},
+        )
 
 
 if __name__ == "__main__":

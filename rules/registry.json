@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "rule_version": "2026-07-01",
+  "rule_version": "2026-08-07",
   "source": "review-investment/references/investment-principles.md",
   "status": "configuring",
   "rules": [

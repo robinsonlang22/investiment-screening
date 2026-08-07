@@ -28,7 +28,6 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         return {
             "symbol": "301536.sz",
             "price_history": self.price_history,
-            "spread_expanding": True,
             **overrides,
         }
 
@@ -93,6 +92,12 @@ class ApiPipelineTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post(
             "/v1/evaluate/p1",
             json=self.request_body(analysis_type="p1"),
+        )
+        self.assertEqual(response.status_code, 422)
+
+        response = await self.client.post(
+            "/v1/evaluate/p1",
+            json=self.request_body(spread_expanding=True),
         )
         self.assertEqual(response.status_code, 422)
 

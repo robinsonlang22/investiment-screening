@@ -48,7 +48,6 @@ class PricePoint(StrictModel):
 class EvaluateRequest(StrictModel):
     symbol: str = Field(min_length=1)
     price_history: list[PricePoint] = Field(min_length=1)
-    spread_expanding: bool | None = None
 
     @field_validator("symbol")
     @classmethod
@@ -90,7 +89,6 @@ def _build_price_features(price_rows: list[dict[str, Any]]) -> dict[str, Any]:
             for key, series in ma_series.items()
         },
         "density_series": densities,
-        "density_last_3_days": densities[-3:],
         "regression_features": calculate_price_regression_features(closes),
         "rolling_clock_results": calculate_rolling_clock_features(closes),
     }
@@ -139,7 +137,6 @@ def _evaluate(
     # always calculated internally for P2 while remaining hidden in /p2 output.
     p1 = evaluate_p1(
         features,
-        spread_expanding=request.spread_expanding,
         rule_config=_rule("P1"),
     )
     p2 = None
