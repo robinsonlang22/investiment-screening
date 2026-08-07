@@ -69,3 +69,6 @@ Desktop.ini
 .uv-cache/
 .cache/
 .ipynb_checkpoints/
+
+# Workflow
+n8n/
