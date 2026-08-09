@@ -42,6 +42,8 @@ This avoids routing internal service traffic through a public IP address.
 
 ### Reporting workflow
 
+![Reporting workflow](docs/images/reporting-workflow.png)
+
 The main workflow accepts a stock-screening request through a webhook.
 
 1. Receive `symbol`, `market`, and `analysis_type`.
@@ -71,6 +73,8 @@ curl -X POST "https://YOUR_N8N_HOST/webhook/investment-screening" \
 ```
 
 ### Test workflow
+
+![Test workflow](docs/images/test-workflow.png)
 
 The test workflow runs the same collection, validation, routing, and calculation path against a stock pool stored in Google Sheets.
 
