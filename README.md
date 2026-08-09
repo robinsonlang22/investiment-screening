@@ -327,3 +327,9 @@ Data-collection failure and rule failure are different outcomes. A validation or
 This project demonstrates workflow orchestration, agent-based data collection, structured-output handling, data validation, deterministic HTTP computation, container networking, automated reporting, and batch evaluation.
 
 It is a technical screening framework, not financial advice. Output quality depends on the configured data source, rule definitions, and available market data.
+
+## License
+
+The source code and project-authored documentation are available under the
+[MIT License](LICENSE). Third-party services, market data, APIs, trademarks,
+and exported assets remain subject to their respective terms and licenses.
