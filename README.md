@@ -12,6 +12,8 @@ The system runs on Google Cloud Platform with Docker Compose.
 - **Rule engine** is a Python service served by Uvicorn and called through HTTP.
 - **Docker Compose** places n8n and the rule engine on the same Docker network.
 - **A model API** powers the data-collection and report agents.
+- **妙想金融数据 MCP (`mx-ds-mcp`)** provides Eastmoney market data,
+  financial data, announcements, and macro data to the collection agent.
 - **Google Sheets** stores the batch test dataset and evaluation results.
 - **Telegram** delivers the final screening report.
 
@@ -104,6 +106,24 @@ The Evaluation node can record fields such as:
 
 This makes it possible to test a configurable stock pool without submitting every request manually.
 
+#### Current batch test results
+
+The following sample run passed 3 of 6 cases. A row passes only when
+`actual_status` exactly matches `expected_status`.
+
+| symbol | market | analysis_type | expected_status | actual_status | test_result |
+|---|---|---|---|---|---|
+| 600519.SH | CN | p1 | PASS | CONDITIONAL_PASS | FAIL |
+| 600519.SH | CN | p2 | PASS | PASS | PASS |
+| 603986.SH | CN | p1 | FAIL | FAIL | PASS |
+| 603986.SH | CN | p2 | FAIL | CONDITIONAL_PASS | FAIL |
+| 300866.SZ | CN | p1 | CONDITIONAL_PASS | CONDITIONAL_PASS | PASS |
+| 300866.SZ | CN | p2 | CONDITIONAL_PASS | PASS | FAIL |
+
+The three failed comparisons are expectation mismatches rather than workflow
+execution errors. Review the source data and rule evidence before deciding
+whether to update the expected status or adjust a rule.
+
 ## Requirements
 
 - A GCP virtual machine or another Docker host
@@ -162,10 +182,58 @@ In n8n:
 
 1. Create the model API credential.
 2. Select that credential in the model nodes.
-3. Configure the financial-data tool credential.
-4. Confirm that the collection agent returns the JSON structure expected by the parser.
+3. Add and authorize the 妙想金融数据 MCP server as `mx-ds-mcp`.
+4. Expose the required MCP tools to the collection agent.
+5. Confirm that the collection agent returns the JSON structure expected by the parser.
 
 The model collects and formats evidence. The Python service remains responsible for deterministic calculations and rule decisions.
+
+#### Using MX-DS-MCP
+
+MX-DS-MCP is the project's financial-data access layer. The collection agent
+selects a tool according to the security or dataset being requested:
+
+| Data scope | MCP tool |
+|---|---|
+| A-shares | `mx_ashare_finance_data` |
+| Hong Kong stocks | `mx_hk_finance_data` |
+| US stocks | `mx_us_finance_data` |
+| Funds | `mx_fund_finance_data` |
+| Bonds | `mx_bond_finance_data` |
+| Indices and sectors | `mx_index_block_finance_data` |
+| Company, fund, bond, and regulatory announcements | `mx_finance_search_notice` |
+| Macro, industry, and commodity data | `mx_macro_data` |
+
+For P1 and P2 screening, request daily historical closing prices with the
+symbol, market, date range, frequency, field, and adjustment method stated
+explicitly. Prefer structured table output. The returned price table must then
+be normalized to the rule-engine contract:
+
+```json
+{
+  "symbol": "600519.SH",
+  "price_history": [
+    {
+      "date": "2026-08-06",
+      "close": 1308.55
+    }
+  ]
+}
+```
+
+The adapter in `engine/adapter.py` accepts common MCP table shapes, normalizes
+dates and closing-price fields, and produces the `rows` structure used by the
+price-history validator. Keep calculation and final rule classification in the
+Python engine; MCP supplies source data and evidence but does not determine the
+P1 or P2 status.
+
+When configuring or prompting the collection agent:
+
+1. Use the market-specific tool for the requested symbol.
+2. Specify the metric, time range, frequency, unit, and calculation basis.
+3. Use announcement search for material events or current risk disclosures.
+4. Treat missing, stale, or inconsistent data as insufficient information.
+5. Never place MCP credentials or tokens in workflow exports or this repository.
 
 ### 4. Configure Google Sheets
 
