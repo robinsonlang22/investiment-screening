@@ -6,7 +6,7 @@ The project is designed as a reusable workflow rather than a fixed investment st
 
 ## Demo Video
 
-[▶ project demonstration](docs/videos/investment-screening-DE.mp4)
+[▶ project demonstration](Investment-Screening-DE.mp4)
 
 ## Architecture
 
