@@ -12,7 +12,7 @@ The system runs on Google Cloud Platform with Docker Compose.
 - **Rule engine** is a Python service served by Uvicorn and called through HTTP.
 - **Docker Compose** places n8n and the rule engine on the same Docker network.
 - **A model API** powers the data-collection and report agents.
-- **妙想金融数据 MCP (`mx-ds-mcp`)** provides Eastmoney market data,
+- **MX Financial Data MCP (`mx-ds-mcp`)** provides Eastmoney market data,
   financial data, announcements, and macro data to the collection agent.
 - **Google Sheets** stores the batch test dataset and evaluation results.
 - **Telegram** delivers the final screening report.
@@ -186,7 +186,7 @@ In n8n:
 
 1. Create the model API credential.
 2. Select that credential in the model nodes.
-3. Add and authorize the 妙想金融数据 MCP server as `mx-ds-mcp`.
+3. Add and authorize the MX Financial Data MCP server as `mx-ds-mcp`.
 4. Expose the required MCP tools to the collection agent.
 5. Confirm that the collection agent returns the JSON structure expected by the parser.
 

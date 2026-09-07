@@ -139,13 +139,13 @@ def evaluate_p1(
     ]
     if required_up is None:
         status = INSUFFICIENT_INFORMATION
-        reasons = ["缺少核心均线或其10日斜率，无法判断P1"]
+        reasons = ["Core moving averages or their 10-day slopes are missing; P1 cannot be evaluated"]
     elif not required_up:
         status = FAIL
-        reasons = ["未满足核心向上状态"]
+        reasons = ["Core upward state is not met"]
     elif not bullish_alignment:
         status = CONDITIONAL_PASS
-        reasons = ["核心均线向上，但尚未形成MA5 > MA10 > MA20的完整多头排列"]
+        reasons = ["Core moving averages are rising, but MA5 > MA10 > MA20 is not yet established"]
     else:
         status = PASS
         reasons = []
@@ -159,8 +159,8 @@ def evaluate_p1(
         else ma20 > ma60 and slope60 > 0
     )
     background_label = (
-        "中长期背景同步向上" if background_synchronized else "中长期背景尚未同步"
-    ) if background_synchronized is not None else "中长期背景信息不足"
+        "Medium- and long-term trends are aligned upward" if background_synchronized else "Medium- and long-term trends are not yet aligned"
+    ) if background_synchronized is not None else "Insufficient medium- and long-term trend data"
 
     return {
         "rule_id": "P1",

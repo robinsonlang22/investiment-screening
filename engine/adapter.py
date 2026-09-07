@@ -25,26 +25,26 @@ class AdapterError(ValueError):
 
 
 _NULL_TOKENS = {"", "-", "--", "—", "null", "none", "nan", "n/a", "na"}
-_DATE_KEYS = ("date", "trade_date", "日期", "交易日期", "报告日期")
+_DATE_KEYS = ("date", "trade_date", "trading_date", "report_date")
 _METRIC_KEYS = (
     "metric",
     "metric_name",
     "indicator",
     "name",
-    "指标",
-    "项目",
+    "measure",
+    "item",
     "_metric",
     "_sheet_name",
 )
-_UNIT_KEYS = ("unit", "currency", "单位", "币种", "_original_unit")
+_UNIT_KEYS = ("unit", "currency", "currency_code", "_original_unit")
 _WRAPPER_KEYS = ("rows", "data", "records", "results", "items", "values")
 
 _VALUE_ALIASES = {
-    "price": ("close", "close_price", "收盘价"),
+    "price": ("close", "close_price", "closing_price"),
 }
 
 _METRIC_ALIASES = {
-    "price": {"close", "close_price", "收盘价"},
+    "price": {"close", "close_price", "closing_price"},
 }
 
 # Fields commonly returned alongside the requested metric.  Their presence
@@ -54,35 +54,30 @@ _KNOWN_OTHER_VALUE_ALIASES = {
     "price": {
         "open",
         "open_price",
-        "开盘价",
+        "opening_price",
         "high",
         "high_price",
-        "最高价",
+        "highest_price",
         "low",
         "low_price",
-        "最低价",
+        "lowest_price",
         "change",
         "change_pct",
         "pct_change",
-        "区间涨跌幅",
-        "涨跌幅",
+        "period_change_pct",
+        "price_change_pct",
     },
 }
 
 _UNIT_FACTORS = {
     "cny": 1.0,
     "rmb": 1.0,
-    "人民币": 1.0,
-    "元": 1.0,
-    "万元": 10_000.0,
-    "万": 10_000.0,
-    "亿元": 100_000_000.0,
-    "亿": 100_000_000.0,
-    "万亿元": 1_000_000_000_000.0,
-    "万亿": 1_000_000_000_000.0,
+    "yuan": 1.0,
+    "ten_thousand_cny": 10_000.0,
+    "hundred_million_cny": 100_000_000.0,
+    "trillion_cny": 1_000_000_000_000.0,
     "%": 1.0,
-    "倍": 1.0,
-    "次": 1.0,
+    "times": 1.0,
 }
 
 
@@ -106,13 +101,7 @@ def normalize_date(value: Any) -> str | None:
 
     text = str(value).strip()
     text = re.sub(r"\([^)]*\)$", "", text).strip()
-    text = (
-        text.replace("年", "-")
-        .replace("月", "-")
-        .replace("日", "")
-        .replace("/", "-")
-        .replace(".", "-")
-    )
+    text = text.replace("/", "-").replace(".", "-")
 
     if re.fullmatch(r"\d{8}", text):
         try:
@@ -174,7 +163,7 @@ def normalize_number(
             warnings,
             code="UNPARSEABLE_VALUE",
             value=value,
-            message="布尔值不能作为数值解析",
+            message="Boolean values cannot be parsed as numbers",
             context=context,
         )
         return None
@@ -186,19 +175,14 @@ def normalize_number(
         if parenthesized:
             text = text[1:-1].strip()
         for suffix in (
-            "万亿元",
-            "亿元",
-            "万元",
-            "人民币",
+            "trillion_cny",
+            "hundred_million_cny",
+            "ten_thousand_cny",
             "CNY",
             "RMB",
-            "万亿",
-            "元",
-            "亿",
-            "万",
+            "yuan",
             "%",
-            "倍",
-            "次",
+            "times",
         ):
             if text.lower().endswith(suffix.lower()):
                 explicit_unit = suffix
@@ -212,7 +196,7 @@ def normalize_number(
                 warnings,
                 code="UNPARSEABLE_VALUE",
                 value=value,
-                message="无法解析数值",
+                message="Value cannot be parsed as a number",
                 context=context,
             )
             return None
@@ -226,7 +210,7 @@ def normalize_number(
                 warnings,
                 code="UNPARSEABLE_VALUE",
                 value=value,
-                message="无法解析数值",
+                message="Value cannot be parsed as a number",
                 context=context,
             )
             return None
@@ -236,7 +220,7 @@ def normalize_number(
             warnings,
             code="NON_FINITE_VALUE",
             value=value,
-            message="数值必须为有限值",
+            message="Value must be finite",
             context=context,
         )
         return None
@@ -247,7 +231,7 @@ def normalize_number(
             warnings,
             code="UNSUPPORTED_UNIT",
             value=value,
-            message=f"不支持的单位：{source_unit}",
+            message=f"Unsupported unit: {source_unit}",
             context=context,
         )
         return None
@@ -375,7 +359,7 @@ def _standard_records(
         if raw_date is not None:
             if value_key is None:
                 metric = _metric_name(row)
-                generic_value, _ = _first(row, ("value", "数值"))
+                generic_value, _ = _first(row, ("value", "numeric_value"))
                 if metric in metric_aliases and generic_value is not None:
                     raw_value = generic_value
                 elif metric is not None and metric not in metric_aliases:

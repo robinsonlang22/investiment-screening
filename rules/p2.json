@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0.0",
   "id": "P2",
-  "name": "股价运行方向原则",
+  "name": "Price Trend Rule",
   "category": "technical",
-  "scope": "使用日K线审核买入机会的上市股票",
+  "scope": "Listed stocks screened for buying opportunities with daily price data",
   "rule_type": "buy_required",
   "data": {
     "frequency": "daily",
     "price_field": "close",
-    "as_of": "审核日最近一个已收盘交易日",
+    "as_of": "Latest closed trading day as of the review date",
     "main_window_trading_days": 30,
     "short_window_trading_days": 10,
-    "preferred_source": "东方财富日K收盘价"
+    "preferred_source": "Eastmoney daily closing prices"
   },
   "regression": {
     "model": "ln(close_i) = a + b * i + epsilon_i",
@@ -34,18 +34,18 @@
   "clock_classification": [
     {
       "clock": 1,
-      "name": "快速上升",
+      "name": "Fast Rise",
       "all": ["G30 > 0.50", "R2_30 >= 0.60"]
     },
     {
       "clock": 2,
-      "name": "稳步上升",
+      "name": "Steady Rise",
       "all": ["G30 > 0.15", "G30 <= 0.50", "R2_30 >= 0.60"],
       "preference": "highest"
     },
     {
       "clock": 3,
-      "name": "横盘/震荡",
+      "name": "Flat or Volatile",
       "any": [
         "G30 >= -0.15 and G30 <= 0.15",
         "R2_30 < 0.60"
@@ -53,47 +53,47 @@
     },
     {
       "clock": 4,
-      "name": "缓慢下降",
+      "name": "Slow Decline",
       "all": ["G30 >= -0.50", "G30 < -0.15", "R2_30 >= 0.60"],
       "hard_veto": true
     },
     {
       "clock": 5,
-      "name": "快速下降",
+      "name": "Fast Decline",
       "all": ["G30 < -0.50", "R2_30 >= 0.60"]
     }
   ],
   "direction_stability": {
     "unstable_when": "sign(G30) != sign(E30)",
     "decision": "insufficient_information",
-    "restriction": "不得给出无保留通过结论"
+    "restriction": "Do not return an unconditional pass"
   },
   "short_acceleration": {
     "does_not_change_clock_classification": true,
     "labels": [
       {
         "when": "sign(G10) != sign(G30)",
-        "label": "短期与主方向背离"
+        "label": "Short-term trend diverges from the main trend"
       },
       {
         "when": "sign(G10) == sign(G30) and abs(G10) > abs(G30)",
-        "label": "短期加速"
+        "label": "Short-term acceleration"
       },
       {
         "when": "sign(G10) == sign(G30) and abs(G10) < abs(G30)",
-        "label": "短期减速"
+        "label": "Short-term slowdown"
       },
       {
         "when": "G10 == G30",
-        "label": "速度基本一致"
+        "label": "Similar trend speed"
       }
     ],
     "unstable_when": "sign(G10) != sign(E10) or R2_10 < 0.60",
-    "missing_data_policy": "仍可按完整30日数据分类，但必须注明短期加速度信息不足"
+    "missing_data_policy": "Classify with complete 30-day data, but note that short-term acceleration data is missing"
   },
   "clock_1_entry_window": {
-    "entry_day": "当前连续1点钟区间的首个交易日；该日满足1点钟而前一交易日不满足",
-    "continuous_interval": "进入日起每个交易日均满足 G30 > 0.50 且 R2_30 >= 0.60；中断后重新计入",
+    "entry_day": "First trading day of the current continuous clock-1 period; that day qualifies but the previous day does not",
+    "continuous_interval": "Every trading day since entry meets G30 > 0.50 and R2_30 >= 0.60; restart after an interruption",
     "trading_day_condition": "days_since_entry_inclusive >= 1 and days_since_entry_inclusive <= 10",
     "return_since_entry_pct": "(close_current / close_entry - 1) * 100",
     "return_condition": "return_since_entry_pct <= 15",
@@ -136,11 +136,11 @@
     }
   },
   "insufficient_information_conditions": [
-    "G30 与 E30 方向相反",
-    "缺少足够数据完成滚动30日主回归",
-    "无法计算 R2_30",
-    "当前分类所需的 MA10、MA20 或 P1 均线密集状态缺失",
-    "1点钟方向缺少进入日或进入日收盘价且两项窗口条件均无法判断"
+    "G30 and E30 point in opposite directions",
+    "Not enough data for the rolling 30-day main regression",
+    "R2_30 cannot be calculated",
+    "MA10, MA20, or the P1 moving-average density state required for this classification is missing",
+    "The clock-1 entry day or its closing price is missing, so neither window condition can be evaluated"
   ],
   "required_disclosures": [
     "data_as_of_date",

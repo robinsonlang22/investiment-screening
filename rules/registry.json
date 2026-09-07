@@ -7,7 +7,7 @@
     {
       "id": "P1",
       "category": "technical",
-      "name": "均线排列原则",
+      "name": "Moving Average Alignment Rule",
       "file": "p1.json",
       "enabled": true,
       "required": true
@@ -15,7 +15,7 @@
     {
       "id": "P2",
       "category": "technical",
-      "name": "股价运行方向原则",
+      "name": "Price Trend Rule",
       "file": "p2.json",
       "enabled": true,
       "required": true,
@@ -67,6 +67,6 @@
     "minimum_or_maximum_holding_period": null,
     "stop_loss_trim_or_exit_rules": null,
     "other_vetoes": null,
-    "policy": "null 表示未设定，执行器不得自行推断或补充"
+    "policy": "null means unset; the evaluator must not infer or add a value"
   }
 }

@@ -27,8 +27,8 @@ from typing import Any
 
 
 _NULL_TOKENS = {"", "-", "--", "null", "none", "nan", "n/a", "na"}
-_DATE_KEYS = ("date", "trade_date", "交易日期", "日期")
-_CLOSE_KEYS = ("close", "close_price", "收盘价")
+_DATE_KEYS = ("date", "trade_date", "trading_date")
+_CLOSE_KEYS = ("close", "close_price", "closing_price")
 
 
 def _issue(code: str, message: str, *, row: int | None = None) -> dict[str, Any]:
@@ -53,7 +53,7 @@ def _unpack_dataset(data: Any) -> tuple[list[Any], dict[str, Any], list[dict[str
     ):
         return list(raw_rows), metadata, issues
 
-    issues.append(_issue("INVALID_ROWS", "rows 必须是字典列表"))
+    issues.append(_issue("INVALID_ROWS", "rows must be a list of objects"))
     return [], metadata, issues
 
 
@@ -129,10 +129,10 @@ def _check_order_and_duplicates(
     if len(dates) != len(set(dates)):
         duplicates = sorted({item.isoformat() for item in dates if dates.count(item) > 1})
         issues.append(
-            _issue("DUPLICATE_DATE", f"存在重复交易日期：{', '.join(duplicates)}")
+            _issue("DUPLICATE_DATE", f"Duplicate trading dates: {', '.join(duplicates)}")
         )
     if dates != sorted(dates):
-        issues.append(_issue("UNSORTED_DATES", "数据必须按交易日期升序排列"))
+        issues.append(_issue("UNSORTED_DATES", "Rows must be sorted by trading date"))
 
 
 def validate_price_history(
@@ -148,13 +148,13 @@ def validate_price_history(
 
     if not isinstance(minimum_observations, int) or minimum_observations <= 0:
         issues.append(
-            _issue("INVALID_MINIMUM", "minimum_observations 必须是正整数")
+            _issue("INVALID_MINIMUM", "minimum_observations must be a positive integer")
         )
 
     for index, raw_row in enumerate(raw_rows):
         row_number = index + 1
         if not isinstance(raw_row, Mapping):
-            issues.append(_issue("INVALID_ROW", "每一行必须是字典", row=row_number))
+            issues.append(_issue("INVALID_ROW", "Each row must be an object", row=row_number))
             continue
 
         raw_date, _ = _first_value(raw_row, _DATE_KEYS)
@@ -165,13 +165,13 @@ def validate_price_history(
         date_valid = True
         if trade_date is None:
             issues.append(
-                _issue("INVALID_DATE", "交易日期缺失或格式非法", row=row_number)
+                _issue("INVALID_DATE", "Trading date is missing or invalid", row=row_number)
             )
             row_valid = False
             date_valid = False
         elif trade_date > date.today():
             issues.append(
-                _issue("FUTURE_DATE", "交易日期不能晚于今天", row=row_number)
+                _issue("FUTURE_DATE", "Trading date cannot be in the future", row=row_number)
             )
             row_valid = False
             date_valid = False
@@ -182,7 +182,7 @@ def validate_price_history(
             issues.append(
                 _issue(
                     "INVALID_CLOSE",
-                    "收盘价必须是非 NULL、非 '-' 的正数",
+                    "Closing price must be a positive number, not NULL or '-'",
                     row=row_number,
                 )
             )
@@ -201,7 +201,7 @@ def validate_price_history(
             issues.append(
                 _issue(
                     "INSUFFICIENT_OBSERVATIONS",
-                    f"至少需要 {minimum_observations} 个有效观测，当前为 {len(valid_rows)}",
+                    f"At least {minimum_observations} valid observations are required; found {len(valid_rows)}",
                 )
             )
 
@@ -215,7 +215,7 @@ def validate_price_history(
         issues.append(
             _issue(
                 "STALE_OR_MISMATCHED_LATEST_DATE",
-                "最新价格日期与声明的最近已收盘交易日不一致",
+                "Latest price date does not match the declared latest closed trading day",
             )
         )
 

@@ -1,68 +1,64 @@
 ---
 name: review-investment
-description: 审核用户拟投资的股票、基金、债券、指数或板块是否符合其个人投资原则。用于用户提供投资标的并要求投资审核、原则匹配、买入前检查、持仓复核或风险复盘时；调用 mx-ds-mcp 的东方财富数据，逐条引用证据并输出符合、有条件符合、不符合或信息不足。
+description: Review a stock, fund, bond, index, or sector against the user's personal investment rules. Use for investment reviews, rule checks, pre-purchase checks, position reviews, or risk reviews. Retrieve Eastmoney data through mx-ds-mcp, cite evidence for each rule, and return compliant, conditional, not compliant, or insufficient information.
 ---
 
-# 投资原则审核
+# Investment Rule Review
 
-把用户的投资原则当作审核规则，而不是自行创造投资偏好。先读
-[references/investment-principles.md](references/investment-principles.md)。若文件仍含待填写项，
-说明原则库尚未配置，并请用户提供原则；不得假装已完成个性化审核。
+Treat the user's investment principles as fixed review rules. Do not invent preferences. First read [references/investment-principles.md](references/investment-principles.md). If it still contains unconfigured items, explain that the rule set is incomplete and ask for the missing principles. Do not claim to have completed a personalized review.
 
-## 审核流程
+## Review process
 
-1. 识别标的名称、代码、市场、拟执行动作、计划价格、持有期限和仓位。名称有歧义时先查基本资料；仍无法唯一定位才询问用户。
-2. 从原则库提取所有适用规则，区分硬性否决、必要条件、偏好项和风险上限。不得改变原意或默默补充阈值。
-3. 为每条规则列出所需事实和计算口径，再调用对应的 `mx-ds-mcp` 东方财富工具：
-   - A股：`mx_ashare_finance_data`
-   - 港股：`mx_hk_finance_data`
-   - 美股：`mx_us_finance_data`
-   - 基金：`mx_fund_finance_data`
-   - 债券：`mx_bond_finance_data`
-   - 指数或板块：`mx_index_block_finance_data`
-   - 公司、基金、债券及监管公告：`mx_finance_search_notice`
-   - 宏观、行业和商品数据：`mx_macro_data`
-4. 优先请求结构化数据；涉及重大事项、管理层承诺、风险提示或最新变化时补查公告。查询中写明标的、指标、时间范围、频率、单位和口径。
-5. 对每条原则分别判定。事实缺失、口径不一致或数据过期时标为“信息不足”，不得把缺失当作通过。
-6. 按下方规则汇总总评，并清楚分开事实、推断和用户仍需决定的事项。
+1. Identify the asset name, symbol, market, intended action, target price, holding period, and position size. If the name is ambiguous, check basic information first. Ask the user only if it still cannot be identified.
+2. Extract every applicable rule. Separate hard vetoes, required conditions, preferences, and risk limits. Preserve the original meaning and do not add thresholds.
+3. List the facts and calculation basis needed for each rule, then use the matching Eastmoney tool from `mx-ds-mcp`:
+   - A-shares: `mx_ashare_finance_data`
+   - Hong Kong stocks: `mx_hk_finance_data`
+   - US stocks: `mx_us_finance_data`
+   - Funds: `mx_fund_finance_data`
+   - Bonds: `mx_bond_finance_data`
+   - Indices or sectors: `mx_index_block_finance_data`
+   - Company, fund, bond, and regulatory announcements: `mx_finance_search_notice`
+   - Macro, industry, and commodity data: `mx_macro_data`
+4. Prefer structured data. Check announcements for material events, management commitments, risk notices, or recent changes. State the asset, metric, date range, frequency, unit, and calculation basis in each query.
+5. Evaluate every rule separately. Mark missing, inconsistent, or stale evidence as `insufficient information`; never treat missing data as a pass.
+6. Apply the summary rules below. Clearly separate facts, inferences, and decisions the user still needs to make.
 
-## 判定规则
+## Decision rules
 
-- **不符合**：触发任一硬性否决项，或违反原则库规定的必备条件。
-- **有条件符合**：未触发硬性否决，但存在未满足的偏好项、待验证的重要事实，或只有在特定价格、仓位、期限下才符合。
-- **符合**：所有硬性项和必备项均通过，关键信息充分，且未超出原则规定的风险边界。
-- **信息不足**：无法取得足够证据完成关键规则审核。
+- **Not compliant**: A hard veto is triggered or a required condition fails.
+- **Conditional**: No hard veto is triggered, but a preference fails, an important fact is unverified, or compliance depends on price, size, or holding period.
+- **Compliant**: All hard and required conditions pass, evidence is sufficient, and risk limits are respected.
+- **Insufficient information**: Evidence is inadequate to evaluate a key rule.
 
-若原则库给出不同的聚合方式，以原则库为准。不要仅凭总分覆盖硬性否决项。
+If the rule library defines a different aggregation method, use it. A score never overrides a hard veto.
 
-## 输出格式
+## Output format
 
-先给结论，再给证据：
+Lead with the decision, then the evidence:
 
 ```text
-审核结论：符合 / 有条件符合 / 不符合 / 信息不足
-标的：名称（代码，市场）
-审核动作：买入 / 加仓 / 持有 / 其他
-数据截至：YYYY-MM-DD（若各指标日期不同，逐项注明）
+Decision: Compliant / Conditional / Not compliant / Insufficient information
+Asset: Name (symbol, market)
+Action: Buy / Add / Hold / Other
+Data as of: YYYY-MM-DD (show dates per metric when they differ)
 
-核心理由：
+Key reasons:
 1. ...
 2. ...
 
-逐条原则：
-| 原则 | 类型 | 证据与口径 | 判定 |
+Rule-by-rule review:
+| Rule | Type | Evidence and basis | Result |
 |---|---|---|---|
-| ... | 硬性否决/必要/偏好/风险上限 | 数值、期间、来源工具 | 通过/未通过/信息不足 |
+| ... | Hard veto / Required / Preference / Risk limit | Value, period, source tool | Pass / Fail / Insufficient information |
 
-主要风险与反证：
+Main risks and contrary evidence:
 - ...
 
-仍需确认：
+Still needed:
 - ...
 
-最终说明：这是按用户自定原则进行的一致性审核，不代表收益保证。
+Note: This checks consistency with the user's own rules. It does not guarantee returns.
 ```
 
-保持可审计性：数值必须附期间或日期；计算值写出公式；引用公告时写公告名称和日期；
-不把模型推断表述为数据库事实。若用户没有给出拟买价格、仓位或期限，只在相关原则确实需要时追问，
-否则基于当前数据先完成可完成的审核。
+Keep the review auditable. Give a date or period for every value, show formulas for calculated values, and include an announcement's title and date when cited. Do not present model inferences as database facts. Ask for target price, position size, or holding period only when an applicable rule needs it; otherwise complete the review with available data.

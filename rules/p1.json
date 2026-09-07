@@ -1,18 +1,18 @@
 {
   "schema_version": "1.0.0",
   "id": "P1",
-  "name": "均线排列原则",
+  "name": "Moving Average Alignment Rule",
   "category": "technical",
-  "scope": "使用日K线审核的上市股票",
+  "scope": "Listed stocks screened with daily price data",
   "rule_type": "required_with_preferences",
   "data": {
     "frequency": "daily",
     "price_field": "close",
-    "as_of": "审核日最近一个已收盘交易日",
+    "as_of": "Latest closed trading day as of the review date",
     "intraday_final_judgement_allowed": false,
-    "minimum_history_requirement": "至少120个交易日",
+    "minimum_history_requirement": "At least 120 trading days",
     "moving_average_periods": [5, 10, 20, 60],
-    "preferred_source": "东方财富日K收盘价"
+    "preferred_source": "Eastmoney daily closing prices"
   },
   "metrics": {
     "MA5": "SMA(close, 5)",
@@ -76,8 +76,8 @@
     }
   ],
   "insufficient_information_conditions": [
-    "历史数据不足以计算要求的均线与10日斜率",
-    "计算周期无法核对"
+    "Not enough history to calculate the required moving averages and 10-day slopes",
+    "The calculation period cannot be verified"
   ],
   "required_disclosures": [
     "data_as_of_date",

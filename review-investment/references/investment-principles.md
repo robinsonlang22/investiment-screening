@@ -1,175 +1,159 @@
-# 我的投资原则
+# My Investment Rules
 
-> 状态：配置中。已录入的原则可用于审核；未设定的组合约束不得由 Agent 自行补充。
+> Status: In progress. Use configured rules for reviews. The agent must not invent unset portfolio limits.
 
-## 使用说明
+## How to use this file
 
-每条原则尽量写成可以验证的规则，并明确适用范围。没有明确规定的阈值或约束一律视为“未设定”，不得虚构。
+Write each principle as a testable rule with a clear scope. Treat any unspecified threshold or limit as unset.
 
-## 技术面原则
+## Technical rules
 
-### P1：均线排列原则
+### P1: Moving Average Alignment
 
-- 适用范围：使用日K线审核的上市股票。
-- 级别与类型：一级原则；必要条件。其中明确写为“最好”的项目按偏好项处理。
-- 数据口径：前复权日线收盘价。`MA5`、`MA10`、`MA20` 是P1核心均线；
-  `MA60` 仅作为中长期背景提示。至少获取120个交易日。
-- 数据时效：截至审核日最近一个已收盘交易日；不得用盘中价格代替收盘价完成最终判定。
+- Scope: Listed stocks reviewed with daily price data.
+- Level and type: Primary required rule. Items marked preferred are preferences.
+- Data: Forward-adjusted daily closing prices. `MA5`, `MA10`, and `MA20` are the core averages; `MA60` provides background only. Use at least 120 trading days.
+- Recency: Use the latest closed trading day on the review date. Do not use an intraday price for the final decision.
 
-#### 状态定义
+#### State definitions
 
-1. **核心向上状态**：`MA5`、`MA10`、`MA20` 的10日斜率均大于0，
-   且 `MA10 > MA20`。
-2. **核心多头排列**：`MA5 > MA10 > MA20`，且三条核心均线均向上。
-3. **核心空头状态**：三条核心均线均向下，或 `MA10 ≤ MA20`。
-4. **核心均线平均成本**：设核心均线数量 `m=3`：
+1. **Core upward**: The 10-day slopes of `MA5`, `MA10`, and `MA20` are all above zero, and `MA10 > MA20`.
+2. **Core bullish alignment**: `MA5 > MA10 > MA20`, and all three core averages are rising.
+3. **Core bearish**: All three core averages are falling, or `MA10 ≤ MA20`.
+4. **Mean core moving average**: For `m=3`:
 
-   \[
-   \mu(t)=\frac{1}{m}\sum_{i=1}^{m}MA_{n_i}(t)
-   \]
+   ```text
+   μ(t) = [MA5(t) + MA10(t) + MA20(t)] / 3
+   ```
 
-5. **极差与相对极差**：
+5. **Range and relative range**:
 
-   \[
-   R(t)=\max_i(MA_{n_i}(t))-\min_i(MA_{n_i}(t))
-   \]
+   ```text
+   R(t) = max(MA5, MA10, MA20) - min(MA5, MA10, MA20)
+   r(t) = R(t) / μ(t) × 100%
+   ```
 
-   \[
-   r(t)=\frac{R(t)}{\mu(t)}\times100\%
-   \]
+6. **Daily density**: The current threshold is `δ=2%`. A day is dense (`Q_t=1`) when `r(t)≤2%`; otherwise `Q_t=0`. Report `μ(t)`, `R(t)`, and `r(t)`. Use a new threshold if the user changes `δ`.
+7. **Moving-average slope**: Use the average daily change over the latest 10 trading days:
 
-6. **单日密集条件**：当前操作阈值设为 `\delta=2%`。当 `r(t)≤2%` 时，
-   该交易日记为原始密集日 `Q_t=1`；否则 `Q_t=0`。必须报告 `\mu(t)`、
-   `R(t)` 和 `r(t)`。以后用户调整 `\delta` 时以新阈值为准。
-7. **均线斜率**：统一使用最近10个交易日的日均变化率。对任一均线 `MA`：
+   ```text
+   S10(MA) = [MA(t) / MA(t-10) - 1] / 10 × 100%
+   ```
 
-   \[
-   S_{10}(MA)=\frac{MA_t/MA_{t-10}-1}{10}\times100\%
-   \]
+   This measures moving-average direction only. It does not replace P2's 30-day main regression or 10-day short-term regression.
+8. **MA60 background**:
+   - Calculate and report `MA60` and `S10(MA60)`, but do not use them to decide P1.
+   - If `MA20 > MA60` and `S10(MA60)>0`, report that medium- and long-term trends are aligned upward.
+   - If `MA20 ≤ MA60` or `S10(MA60)≤0`, report that they are not yet aligned.
+   - An MA60 state alone cannot make P1 fail or become conditional.
 
-   `S₁₀(MA)` 表示该均线最近10个交易日的日均变化率。它只用于均线方向，不替代P2判断股价主方向的30日线性回归，也不替代10日短期加速度回归。
+#### Review logic
 
-8. **MA60背景提示**：
-   - 必须计算并披露 `MA60` 与 `S₁₀(MA60)`，但二者不参与P1通过与否。
-   - `MA20 > MA60` 且 `S₁₀(MA60)>0`：提示“中长期背景同步向上”。
-   - `MA20 ≤ MA60` 或 `S₁₀(MA60)≤0`：提示“中长期背景尚未同步”。
-   - 任何MA60状态都不得单独导致P1不通过或有条件通过。
+- Required: Core upward state.
+- Preferred: Core bullish alignment.
+- If core upward is not met: **Fail**.
+- If core upward is met but bullish alignment is not: **Conditional pass**.
+- If bullish alignment is met: **Pass**.
+- Report daily density separately for P2 clock-3 reviews. It does not change the P1 direction result.
+- Exceptions: None set.
+- Evidence priority: Forward-adjusted daily closing prices and averages calculated from them. If a tool supplies averages directly, verify their periods.
 
-#### 审核规则
+### P2: Price Trend
 
-- 必要条件：处于核心向上状态。
-- 偏好项：形成核心多头排列。
-- 未满足核心向上状态：P1判定为“不通过”。
-- 满足核心向上状态但未形成核心多头排列：P1判定为“有条件通过”。
-- 形成核心多头排列：P1判定为“通过”。
-- 单日密集状态独立披露，供P2的3点钟方向使用，不改变上述P1方向判定。
+- Scope: Listed stocks reviewed for a buying opportunity with daily price data.
+- Type: Required buying rule. Clock 4 is a hard veto. Clock 2 is the strongest preference.
+- Data: Use a log-price linear regression over the latest 30 trading days for the main direction. Use a 10-day regression only for short-term acceleration. Never classify direction from a single-day move or chart appearance.
+- Recency: Use the latest closed trading day on the review date.
 
-- 例外条件：未设定。
-- 证据优先级：前复权日K收盘价及据此计算的均线；若工具直接返回均线，需核对计算周期。
+#### Calculations
 
-### P2：股价运行方向原则
+Let the latest 30 trading days be `i = 0, 1, ..., 29`, with closing price `Close_i`. Apply the same method to the latest 10 days for the short-term measures.
 
-- 适用范围：使用日K线审核买入机会的上市股票。
-- 类型：买入必要条件；4点钟方向为硬性否决。2点钟方向是最高偏好。
-- 数据口径：使用最近30个交易日的日线收盘价，以30日线性回归判断股价的主方向；同时计算10日线性回归作为短期加速度辅助指标。钟点方向只按30日主回归分类，不凭单日涨跌或图表视觉角度判定。
-- 数据时效：截至审核日最近一个已收盘交易日。
+1. **Regression**:
 
-#### 计算定义
+   ```text
+   ln(Close_i) = a + b·i + ε_i
+   ```
 
-主方向计算令最近30个交易日为 `i = 0, 1, ..., 29`，收盘价为 `Close_i`。短期加速度计算另取最近10个交易日，并使用相同的对数回归方法。
+2. **Normalized daily trend**:
 
-1. **回归趋势**：对对数收盘价进行线性回归：
+   ```text
+   G = [exp(b) - 1] × 100%
+   ```
 
-   \[
-   \ln(Close_i)=a+b\,i+\varepsilon_i
-   \]
+   The 30-day value is `G30`. It is the only main clock-classification metric.
+3. **Endpoint cross-check**:
 
-2. **30日主方向归一化日趋势斜率**：
+   ```text
+   E = [Close_last / Close_first - 1] / (n - 1) × 100%
+   ```
 
-   \[
-   G=(e^b-1)\times100\%
-   \]
+   Use `E30` to verify direction. If `G30` and `E30` have opposite signs, mark the main direction unstable and do not return an unconditional pass.
+4. **Trend stability**: Report `R²30`. Treat `R²30 ≥ 0.60` as stable. Treat `R²30 < 0.60` as volatile or unstable and review it as a clock-3 candidate. The user may change this threshold.
+5. **Short-term acceleration**: Calculate `G10`, `E10`, and `R²10`. These describe short-term movement but do not change the main clock class:
+   - Opposite signs for `G10` and `G30`: short-term divergence.
+   - Same sign and `|G10| > |G30|`: acceleration.
+   - Same sign and `|G10| < |G30|`: slowdown.
+   - Equal values: similar speed.
+   - Opposite signs for `G10` and `E10`, or `R²10 < 0.60`: also mark short-term direction unstable.
 
-   记30日结果为 `G₃₀`。`G₃₀` 表示主回归趋势对应的日均涨跌幅，避免不同绝对股价之间不可比，并作为钟点方向的唯一主分类指标。
+#### Clock classification
 
-3. **首尾日均变化率（交叉检查）**：
+- **Clock 1 — Fast rise**: `G30 > 0.50%/day` and `R²30 ≥ 0.60`.
+- **Clock 2 — Steady rise**: `0.15%/day < G30 ≤ 0.50%/day` and `R²30 ≥ 0.60`.
+- **Clock 3 — Flat or volatile**: `-0.15%/day ≤ G30 ≤ 0.15%/day`, or `R²30 < 0.60`.
+- **Clock 4 — Slow decline**: `-0.50%/day ≤ G30 < -0.15%/day` and `R²30 ≥ 0.60`.
+- **Clock 5 — Fast decline**: `G30 < -0.50%/day` and `R²30 ≥ 0.60`.
 
-   \[
-   E_{30}=\frac{Close_{29}/Close_0-1}{29}\times100\%
-   \]
+Apply the boundaries exactly as written.
 
-   以 `G₃₀` 作为主分类指标，以 `E₃₀` 检查方向是否一致；若二者符号相反，标记为“主方向不稳定”，不得给出无保留的通过结论。
+#### Clock-1 buying window
 
-4. **30日趋势稳定性**：同时报告30日线性回归的 `R²₃₀`。暂以 `R²₃₀ ≥ 0.60` 认定主方向较稳定；`R²₃₀ < 0.60` 认定为震荡或方向不稳定，并按3点钟候选状态审核。该阈值为当前操作口径，可由用户以后调整。
-5. **10日短期加速度**：对最近10个交易日使用同样方法计算 `G₁₀`、`E₁₀` 和 `R²₁₀`，只用于说明短期相对主方向是在加速、减速还是背离，不改变钟点主分类：
-   - `G₁₀` 与 `G₃₀` 异号：标记为“短期与主方向背离”。
-   - 两者同号时，若 `|G₁₀| > |G₃₀|`：标记为“短期加速”。
-   - 两者同号时，若 `|G₁₀| < |G₃₀|`：标记为“短期减速”。
-   - 两者相等：标记为“速度基本一致”。
-   - `G₁₀` 与 `E₁₀` 异号或 `R²₁₀ < 0.60`：补充标记“短期方向不稳定”，但仍以30日结果决定钟点方向。
+1. **Entry day**: The first trading day of the current continuous clock-1 period. It qualifies for clock 1 and the previous day does not.
+2. **Continuous period**: Every day from entry through the current day meets `G30 > 0.50%/day` and `R²30 ≥ 0.60`. Restart after any interruption.
+3. **Trading-day condition**: Entry is day 1. This condition passes on days 1 through 10.
+4. **Return since entry**:
 
-#### 钟点方向
+   ```text
+   R_entry = [Close_t / Close_entry - 1] × 100%
+   ```
 
-- **1点钟——快速上升**：`G₃₀ > 0.50%/日`，且 `R²₃₀ ≥ 0.60`。
-- **2点钟——稳步上升**：`0.15%/日 < G₃₀ ≤ 0.50%/日`，且 `R²₃₀ ≥ 0.60`。
-- **3点钟——横盘/震荡**：`-0.15%/日 ≤ G₃₀ ≤ 0.15%/日`，或者 `R²₃₀ < 0.60`。
-- **4点钟——缓慢下降**：`-0.50%/日 ≤ G₃₀ < -0.15%/日`，且 `R²₃₀ ≥ 0.60`。
-- **5点钟——快速下降**：`G₃₀ < -0.50%/日`，且 `R²₃₀ ≥ 0.60`。
+5. **Return condition**: Pass when `R_entry ≤ 15%`; exactly 15% passes.
+6. **Either condition passes**: Pass the window if the trading-day condition or return condition passes. Fail only when more than 10 trading days have passed and `R_entry > 15%`.
+7. If the entry day or its closing price is missing and neither condition can be evaluated, return **Insufficient information**.
 
-所有边界按以上包含关系处理，不得根据图形观感改变分类。
+#### Review logic
 
-#### 1点钟买入窗口的定义
+1. **Clock 1**: Pass if within trading days 1–10 after entry, or if `R_entry ≤ 15%`. Fail only if both conditions fail.
+2. **Clock 2**: Highest preference; pass when its definition is met.
+3. **Clock 3**: Pass only when P1's moving averages are dense; otherwise fail.
+4. **Clock 4**: Avoid completely. Trigger the hard veto and fail P2.
+5. **Clock 5**: A counter-trend candidate is allowed only after the latest close rises above `MA10`:
+   - `Close ≤ MA10`: Fail.
+   - `Close > MA10` and `Close ≤ MA20`: Conditional pass.
+   - `Close > MA10` and `Close > MA20`: Pass; this is preferred.
+6. Return **Insufficient information** if `G30` and `E30` disagree in direction, or if the 30-day regression, `R²30`, `MA10`, `MA20`, or required density result is missing. If only the 10-day regression is missing, classify from complete 30-day data and note that short-term acceleration data is missing.
 
-1. **进入日**：按30日主回归判断，当前连续1点钟区间的第一个交易日。该日满足1点钟条件，其前一个交易日不满足1点钟条件。
-2. **连续区间**：从进入日起到当前交易日，每个交易日均满足 `G₃₀ > 0.50%/日` 且 `R²₃₀ ≥ 0.60`；若中途有一天不满足，下一次重新满足时视为新的进入日。
-3. **交易日条件**：进入日计为第1个交易日；当前处于进入后的第1至第10个交易日时，该条件满足。
-4. **进入后累计涨幅**：
+- Exceptions: None set.
+- Evidence priority: Eastmoney daily closing prices and the derived 30-day regression, 10-day regression, `MA10`, `MA20`, and P1 density.
 
-   \[
-   R_{entry}=\left(\frac{Close_t}{Close_{entry}}-1\right)\times100\%
-   \]
+## Fundamental rules
 
-   其中 `Close_entry` 为进入日收盘价，`Close_t` 为当前收盘价。
-5. **涨幅条件**：`R_entry ≤ 15%` 时，该条件满足；等于15%仍符合。
-6. **二选一规则**：交易日条件或涨幅条件满足任意一项，即可通过1点钟买入窗口审核。只有“超过10个交易日”且“`R_entry > 15%`”同时发生时才不通过。
-7. 缺少进入日或相应收盘价，导致两项条件均无法判断时，判定为信息不足。
+Not configured. Start numbering at P3. Future rules should cover earnings quality, growth, solvency, cash flow, valuation, industry, and governance.
 
-#### 审核规则
+## Portfolio and execution limits
 
-1. **1点钟方向**：满足以下任意一项即可买入：
-   - 当前处于进入1点钟后的第1至第10个交易日；
-   - 从进入日收盘价到当前收盘价的累计涨幅 `R_entry ≤ 15%`。
-   
-   只有两项都不满足，即当前已超过第10个交易日且 `R_entry > 15%` 时，P2才不通过。
-2. **2点钟方向**：最喜欢、优先级最高；满足定义即通过。
-3. **3点钟方向**：必须同时满足P1的“均线密集”定义；密集则通过，不密集则不通过。
-4. **4点钟方向**：完全规避，触发硬性否决，P2直接判定为不通过。
-5. **5点钟方向**：允许逆势候选，但最新收盘价必须已经站上 `MA10`：
-   - `Close ≤ MA10`：不通过。
-   - `Close > MA10` 但 `Close ≤ MA20`：有条件通过。
-   - `Close > MA10` 且 `Close > MA20`：通过，属于更理想状态。
-6. 若 `G₃₀` 与 `E₃₀` 方向相反，或缺少足够数据完成滚动30日主回归、`R²₃₀`、MA10/MA20或均线密集计算：判定为信息不足，不得视为通过。缺少10日辅助回归时，钟点方向仍可按完整的30日数据判定，但必须注明“短期加速度信息不足”。
+- Maximum position in one asset: Unset
+- Maximum position in one industry: Unset
+- Allowed asset types and markets: Unset
+- Entry-price or valuation discipline: Unset
+- Minimum or maximum holding period: Unset
+- Stop-loss, trimming, or exit rules: Unset
+- Other hard vetoes: Unset
 
-- 例外条件：未设定。
-- 证据优先级：东方财富日K收盘价及由此计算的30日主回归指标、10日短期加速度指标、MA10、MA20和P1均线密集度。
+## Overall decision
 
-## 基本面原则
-
-尚未录入。从P3开始编号；后续重点定义盈利质量、成长性、偿债能力、现金流、估值、行业与公司治理等审核规则。
-
-## 组合与执行约束
-
-- 单一标的最大仓位：未设定
-- 单一行业最大仓位：未设定
-- 允许的资产类型与市场：未设定
-- 买入价格或估值纪律：未设定
-- 最短/最长持有期限：未设定
-- 止损、减仓或退出规则：未设定
-- 其他一票否决事项：未设定
-
-## 总评规则
-
-- 任一硬性否决项触发：不符合
-- 必要条件存在未通过项：不符合
-- 仅偏好项未通过，或关键事实待确认：有条件符合
-- 所有硬性项和必要条件通过且证据充分：符合
+- Any hard veto triggered: **Not compliant**
+- Any required condition failed: **Not compliant**
+- Only a preference failed, or a key fact remains unverified: **Conditional**
+- All hard and required conditions passed with sufficient evidence: **Compliant**

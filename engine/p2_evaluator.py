@@ -13,11 +13,11 @@ FAIL = "FAIL"
 INSUFFICIENT_INFORMATION = "INSUFFICIENT_INFORMATION"
 
 CLOCK_DIRECTION_NAMES = {
-    1: "快速上升",
-    2: "稳步上升",
-    3: "横盘/震荡",
-    4: "缓慢下降",
-    5: "快速下降",
+    1: "Fast Rise",
+    2: "Steady Rise",
+    3: "Flat or Volatile",
+    4: "Slow Decline",
+    5: "Fast Decline",
 }
 
 
@@ -104,7 +104,7 @@ def classify_short_term_state(
         return {
             "state": "INSUFFICIENT_INFORMATION",
             "direction_unstable": None,
-            "labels": ["短期加速度信息不足"],
+            "labels": ["Short-term acceleration data is missing"],
         }
 
     assert short_g is not None
@@ -114,21 +114,21 @@ def classify_short_term_state(
 
     if _opposite_sign(short_g, main_g):
         state = "DIVERGING"
-        label = "背离"
+        label = "Diverging"
     elif abs(short_g) > abs(main_g):
         state = "ACCELERATING"
-        label = "加速"
+        label = "Accelerating"
     elif abs(short_g) < abs(main_g):
         state = "DECELERATING"
-        label = "减速"
+        label = "Slowing"
     else:
         state = "SAME_SPEED"
-        label = "速度一致"
+        label = "Similar Speed"
 
     unstable = _opposite_sign(short_g, short_e) or short_r2 < 0.60
     labels = [label]
     if unstable:
-        labels.append("短期方向不稳定")
+        labels.append("Short-term direction is unstable")
     return {
         "state": state,
         "direction_unstable": unstable,
@@ -169,10 +169,10 @@ def find_clock_one_entry(
     current_row = price_rows[-1]
     if not isinstance(entry_row, Mapping) or not isinstance(current_row, Mapping):
         raise ValueError("price_rows must contain mappings")
-    entry_date = _value(entry_row, "date", "trade_date", "交易日期", "日期")
-    current_date = _value(current_row, "date", "trade_date", "交易日期", "日期")
-    entry_close = _number(_value(entry_row, "close", "close_price", "收盘价"))
-    current_close = _number(_value(current_row, "close", "close_price", "收盘价"))
+    entry_date = _value(entry_row, "date", "trade_date", "trading_date")
+    current_date = _value(current_row, "date", "trade_date", "trading_date")
+    entry_close = _number(_value(entry_row, "close", "close_price", "closing_price"))
+    current_close = _number(_value(current_row, "close", "close_price", "closing_price"))
     if entry_date is None or current_date is None or entry_close is None or current_close is None:
         return None
 
@@ -212,7 +212,7 @@ def evaluate_clock_one_window(
             "return_condition": None,
             "passes_any_condition": None,
             "return_since_entry_pct": None,
-            "reasons": ["缺少1点钟进入日、当前日或相应收盘价"],
+            "reasons": ["Clock-1 entry date, current date, or a related closing price is missing"],
         }
 
     day_condition = (
@@ -244,12 +244,12 @@ def evaluate_clock_one_window(
         "passes_any_condition": passes_any,
         "reasons": (
             [
-                f"已超过{max_trading_days}个交易日且进入后累计涨幅"
-                f"严格超过{max_return_pct:g}%"
+                f"More than {max_trading_days} trading days have passed and the return since entry "
+                f"is above {max_return_pct:g}%"
             ]
             if status == FAIL
             else (
-                ["缺少精确交易日计数，且累计涨幅条件未满足"]
+                ["Exact trading-day count is missing and the return condition is not met"]
                 if status == INSUFFICIENT_INFORMATION
                 else []
             )
@@ -264,7 +264,7 @@ def evaluate_clock_three(p1_result: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "status": INSUFFICIENT_INFORMATION,
             "checks": [],
-            "reasons": ["缺少P1评估结果"],
+            "reasons": ["P1 evaluation result is missing"],
         }
     market_state = p1_result.get("market_state")
     if market_state == "DENSE":
@@ -281,14 +281,14 @@ def evaluate_clock_three(p1_result: Mapping[str, Any]) -> dict[str, Any]:
             "checks": [
                 {"id": "p1_dense", "passed": None, "observed": market_state}
             ],
-            "reasons": ["无法确认P1是否处于均线密集状态"],
+            "reasons": ["P1 moving-average density state cannot be confirmed"],
         }
     return {
         "status": FAIL,
         "checks": [
             {"id": "p1_dense", "passed": False, "observed": market_state}
         ],
-        "reasons": ["3点钟方向下，P1未处于均线密集状态"],
+        "reasons": ["For a clock-3 direction, P1 is not in a dense moving-average state"],
     }
 
 
@@ -306,7 +306,7 @@ def evaluate_clock_five(
         return {
             "status": INSUFFICIENT_INFORMATION,
             "checks": [],
-            "reasons": ["5点钟判断缺少收盘价、MA10或MA20"],
+            "reasons": ["Clock-5 evaluation is missing the closing price, MA10, or MA20"],
         }
 
     assert close_value is not None
@@ -322,13 +322,13 @@ def evaluate_clock_five(
         return {
             "status": FAIL,
             "checks": checks,
-            "reasons": ["最新收盘价未严格站上MA10"],
+            "reasons": ["Latest closing price is not above MA10"],
         }
     if not above_ma20:
         return {
             "status": CONDITIONAL_PASS,
             "checks": checks,
-            "reasons": ["已站上MA10，但尚未严格站上MA20"],
+            "reasons": ["Closing price is above MA10 but not above MA20"],
         }
     return {"status": PASS, "checks": checks, "reasons": []}
 
@@ -402,7 +402,7 @@ def evaluate_p2(
             "short_term_state": short_state,
             "checks": [],
             "metrics": metrics,
-            "reasons": [f"缺少P2主方向指标：{', '.join(missing_main)}"],
+            "reasons": [f"Missing P2 main-trend metrics: {', '.join(missing_main)}"],
         }
 
     g30 = features["g30"]
@@ -424,7 +424,7 @@ def evaluate_p2(
                 }
             ],
             "metrics": metrics,
-            "reasons": ["G30与E30方向相反，主方向不稳定"],
+            "reasons": ["G30 and E30 point in opposite directions; the main trend is unstable"],
         }
 
     clock = classify_clock_direction(g30, r2_30, rule_config)
@@ -432,7 +432,7 @@ def evaluate_p2(
         evaluation = {
             "status": INSUFFICIENT_INFORMATION,
             "checks": [],
-            "reasons": ["无法根据G30和R²30分类钟点方向"],
+            "reasons": ["Clock direction cannot be classified from G30 and R-squared 30"],
         }
     elif clock == 1:
         rolling = features["rolling"]
@@ -441,7 +441,7 @@ def evaluate_p2(
             evaluation = {
                 "status": INSUFFICIENT_INFORMATION,
                 "checks": [],
-                "reasons": ["1点钟方向缺少滚动30日特征或价格行"],
+                "reasons": ["Clock-1 direction is missing rolling 30-day features or price rows"],
             }
         else:
             entry = find_clock_one_entry(rolling, price_rows)
@@ -449,7 +449,7 @@ def evaluate_p2(
                 evaluation = {
                     "status": INSUFFICIENT_INFORMATION,
                     "checks": [],
-                    "reasons": ["无法定位当前连续1点钟区间的进入日"],
+                    "reasons": ["Entry day for the current continuous clock-1 period cannot be found"],
                 }
             else:
                 limits = _thresholds(rule_config)
@@ -471,7 +471,7 @@ def evaluate_p2(
         evaluation = {
             "status": FAIL,
             "checks": [{"id": "clock_4_hard_veto", "passed": False}],
-            "reasons": ["4点钟缓慢下降触发P2硬性否决"],
+            "reasons": ["Clock-4 slow decline triggers the P2 hard veto"],
         }
     else:
         evaluation = evaluate_clock_five(
