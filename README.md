@@ -4,6 +4,10 @@ A self-hosted stock screening system built with n8n, a Python rule engine, Googl
 
 The project is designed as a reusable workflow rather than a fixed investment strategy. You can replace or extend the calculation rules to match your own screening methodology.
 
+## Demo Video
+
+[▶ German project demonstration](docs/videos/investment-screening-demo-de.mp4)
+
 ## Architecture
 
 The system runs on Google Cloud Platform with Docker Compose.
