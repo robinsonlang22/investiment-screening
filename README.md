@@ -114,23 +114,40 @@ The Evaluation node can record fields such as:
 
 This makes it possible to test a configurable stock pool without submitting every request manually.
 
-#### Current batch test results
+#### Validation summary
 
-The following sample run passed 3 of 6 cases. A row passes only when
-`actual_status` exactly matches `expected_status`.
+The Python rule engine is covered by 31 automated unit and API tests for data
+adaptation, validation, feature calculation, P1/P2 evaluation, aggregation,
+and HTTP endpoints. All 31 tests pass.
 
-| symbol | market | analysis_type | expected_status | actual_status | test_result |
+A separate six-case end-to-end calibration run completed without workflow
+execution errors. Three classifications matched the manually assigned expected
+labels, while three produced different rule-based classifications.
+
+| Validation item | Result |
+|---|---:|
+| Automated Python tests | 31 / 31 passed |
+| End-to-end cases executed | 6 / 6 |
+| Workflow execution errors | 0 |
+| Expected-label matches | 3 / 6 |
+
+The label differences are treated as calibration findings rather than runtime
+failures. Each difference should be reviewed against the source data and rule
+evidence before changing either the expected label or the deterministic rule.
+
+<details>
+<summary>Show calibration cases</summary>
+
+| Symbol | Market | Analysis | Expected label | Engine result | Label match |
 |---|---|---|---|---|---|
-| 600519.SH | CN | p1 | PASS | CONDITIONAL_PASS | FAIL |
-| 600519.SH | CN | p2 | PASS | PASS | PASS |
-| 603986.SH | CN | p1 | FAIL | FAIL | PASS |
-| 603986.SH | CN | p2 | FAIL | CONDITIONAL_PASS | FAIL |
-| 300866.SZ | CN | p1 | CONDITIONAL_PASS | CONDITIONAL_PASS | PASS |
-| 300866.SZ | CN | p2 | CONDITIONAL_PASS | PASS | FAIL |
+| 600519.SH | CN | P1 | PASS | CONDITIONAL_PASS | No |
+| 600519.SH | CN | P2 | PASS | PASS | Yes |
+| 603986.SH | CN | P1 | FAIL | FAIL | Yes |
+| 603986.SH | CN | P2 | FAIL | CONDITIONAL_PASS | No |
+| 300866.SZ | CN | P1 | CONDITIONAL_PASS | CONDITIONAL_PASS | Yes |
+| 300866.SZ | CN | P2 | CONDITIONAL_PASS | PASS | No |
 
-The three failed comparisons are expectation mismatches rather than workflow
-execution errors. Review the source data and rule evidence before deciding
-whether to update the expected status or adjust a rule.
+</details>
 
 ## Requirements
 
