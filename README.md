@@ -180,9 +180,14 @@ If only the Python calculation code changed, rebuild and restart the rule-engine
 docker compose up -d --build rule-engine
 ```
 
-### 2. Import the n8n workflows
+### 2. Configure the n8n workflows
 
-Import the reporting and test workflow JSON files into n8n. Review all credential selections and service URLs after import because credential IDs are specific to each n8n instance.
+The n8n workflow exports are intentionally not included in this public
+repository. The architecture and main processing stages are documented through
+the workflow screenshots and API contracts.
+
+The published Python rule engine can be used independently through its
+versioned HTTP endpoints.
 
 ### 3. Configure the model and data source
 
